@@ -361,6 +361,25 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 Slider((c.offsetMs + 300) / 600f, { c.setOffset(((it * 600f) - 300f).toInt() / 10 * 10) }, colors = SliderDefaults.colors(thumbColor = C.fx, activeTrackColor = C.fx, inactiveTrackColor = C.s3))
             }
             Text("Android lets most phones route to one Bluetooth speaker at a time. Wired + Bluetooth, or USB + Bluetooth, work best.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
+            SectionLabel("Test outputs")
+            Text("Every device beeps a different number of times at the same moment — 1st device once, 2nd twice… Listen to which speaker plays what.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+            PillButton("▶  Test all outputs at once", false, C.ok, Modifier.fillMaxWidth().height(40.dp)) { c.testOutputs(c.devices.map { it.key }) }
+            c.devices.forEachIndexed { idx, d ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.s1).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${idx + 1}", style = T.num.copy(color = C.ok, fontWeight = FontWeight.Bold))
+                    Column(Modifier.weight(1f)) {
+                        Text(d.name, style = T.tab.copy(fontSize = 13.sp), maxLines = 1)
+                        c.testResults[d.key]?.let { Text(it, style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.ok, fontWeight = FontWeight.Normal)) }
+                    }
+                    Chip("TEST", false, C.ok, Modifier.height(30.dp)) { c.testOutputs(listOf(d.key)) }
+                }
+            }
+            if (c.routedTo.isNotEmpty()) {
+                val wanted = c.devices.firstOrNull { it.key == c.masterDev }?.name
+                val mismatch = c.outMode != OutMode.SPLIT && wanted != null && !c.routedTo.startsWith(wanted) && !(wanted == "Bluetooth" && c.routedTo.startsWith("Bluetooth"))
+                Text("Now playing through: ${c.routedTo}", style = T.tab.copy(color = if (mismatch) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
+                if (mismatch) Text("Android is overriding your choice of “$wanted”. Some tablets always send media to connected Bluetooth headphones — disconnect them, or use “Two devices” to keep the headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
+            }
             c.engine.outputError?.let { Text("Output error: $it", style = T.tab.copy(color = C.bad, fontSize = 11.sp)) }
         }
     }
@@ -379,10 +398,10 @@ private fun ModeCard(title: String, body: String, on: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun DeviceList(c: Controller, selected: Int, onPick: (Int) -> Unit) {
+private fun DeviceList(c: Controller, selected: String, onPick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        DeviceRow("System default", "", selected < 0) { onPick(-1) }
-        c.devices.forEach { DeviceRow(it.name, it.kind, selected == it.id) { onPick(it.id) } }
+        DeviceRow("System default", "follows Android", selected.isEmpty()) { onPick("") }
+        c.devices.forEach { DeviceRow(it.name, it.kind, selected == it.key) { onPick(it.key) } }
     }
 }
 

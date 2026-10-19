@@ -156,31 +156,44 @@ class Engine(private val ctx: Context) {
     fun cancelTransition() { transCancel = true }
 
     // ------------------------------------------------------------------ lifecycle
-    fun start() {
+    /** Name of the device Android is really playing the master on (may differ from the preference). */
+    @Volatile var routedMaster: String = ""
+    /** Bumped on every (re)open; a mixer/cue thread exits as soon as its generation is stale. */
+    @Volatile private var gen = 0
+
+    @Synchronized fun start() {
         if (running) return
         running = true
-        openOutputs()
-        thread = Thread({ loop() }, "flux-mixer").also { it.priority = Thread.MAX_PRIORITY; it.start() }
+        launchThreads()
     }
 
-    fun stop() {
+    @Synchronized fun stop() {
         running = false
-        thread?.join(500); thread = null
-        cueThread?.interrupt(); cueThread = null
+        shutdownThreads()
         recorder.stop()
-        closeOutputs()
     }
 
-    fun reopenOutputs() {
-        val wasRunning = running
-        if (!wasRunning) return
-        running = false
-        thread?.join(800); thread = null
-        cueThread?.interrupt(); cueThread?.join(300); cueThread = null
+    /** Switch outputs without ever having two mixer threads alive. */
+    @Synchronized fun reopenOutputs() {
+        if (!running) return
+        shutdownThreads()
+        launchThreads()
+    }
+
+    private fun launchThreads() {
+        val g = ++gen
+        openOutputs(g)
+        thread = Thread({ loop(g) }, "flux-mixer").also { it.priority = Thread.MAX_PRIORITY; it.start() }
+    }
+
+    private fun shutdownThreads() {
+        gen++                                   // old loops exit after their current block
+        try { trackM?.pause(); trackM?.flush() } catch (_: Exception) {}   // unblocks a blocking write()
+        try { trackC?.pause(); trackC?.flush() } catch (_: Exception) {}
+        cueThread?.interrupt()
+        thread?.join(1500); cueThread?.join(500)
+        thread = null; cueThread = null
         closeOutputs()
-        running = true
-        openOutputs()
-        thread = Thread({ loop() }, "flux-mixer").also { it.priority = Thread.MAX_PRIORITY; it.start() }
     }
 
     private fun closeOutputs() {
@@ -192,25 +205,78 @@ class Engine(private val ctx: Context) {
     private fun devices(): Array<AudioDeviceInfo> =
         (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getDevices(AudioManager.GET_DEVICES_OUTPUTS)
 
-    private fun makeTrack(devId: Int): AudioTrack? {
+    private fun makeTrack(devId: Int, onRoute: ((String) -> Unit)? = null): AudioTrack? {
         return try {
             val min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
-            val b = AudioTrack.Builder()
+            val t = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(SR).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setBufferSizeInBytes(max(min, BLOCK * 2 * 4 * 3))
                 .build()
-            if (devId >= 0) devices().firstOrNull { it.id == devId }?.let { track -> b.setPreferredDevice(track) }
-            b.play()
-            b
+            if (devId >= 0) devices().firstOrNull { it.id == devId }?.let { d -> t.setPreferredDevice(d) }
+            if (onRoute != null) {
+                t.addOnRoutingChangedListener({ r -> onRoute(describe((r as AudioTrack).routedDevice)) }, null)
+            }
+            t.play()
+            onRoute?.invoke(describe(t.routedDevice))
+            t
         } catch (e: Exception) { outputError = e.message; null }
     }
 
-    private fun openOutputs() {
+    /**
+     * Output test: play [beeps] short beeps on one device through its own track (independent of the mixer),
+     * and report which device Android really routed it to.
+     */
+    fun playTest(devId: Int, beeps: Int, freq: Double, onRouted: (String) -> Unit) {
+        Thread({
+            var t: AudioTrack? = null
+            try {
+                val min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                t = AudioTrack.Builder()
+                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(SR).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .setBufferSizeInBytes(max(min, SR))
+                    .build()
+                if (devId >= 0) devices().firstOrNull { it.id == devId }?.let { d -> t.setPreferredDevice(d) }
+                // 0.4 s lead-in so Bluetooth has woken up, then N beeps of 160 ms with 220 ms gaps
+                val beep = (SR * 0.16).toInt(); val gap = (SR * 0.22).toInt(); val lead = (SR * 0.4).toInt()
+                val total = lead + beeps * (beep + gap)
+                val pcm = ShortArray(total * 2)
+                for (b in 0 until beeps) {
+                    val st = lead + b * (beep + gap)
+                    for (k in 0 until beep) {
+                        val env = minOf(1.0, k / 300.0, (beep - k) / 300.0)
+                        val v = (kotlin.math.sin(2 * PI * freq * k / SR) * env * 0.5 * 32767).toInt().toShort()
+                        pcm[(st + k) * 2] = v; pcm[(st + k) * 2 + 1] = v
+                    }
+                }
+                t.play()
+                t.write(pcm, 0, pcm.size)
+                onRouted(describe(t.routedDevice).ifEmpty { "unknown" })
+                Thread.sleep(200)
+            } catch (e: Exception) {
+                onRouted("error: ${e.message}")
+            } finally {
+                try { t?.stop(); t?.release() } catch (_: Exception) {}
+            }
+        }, "flux-test").start()
+    }
+
+    private fun describe(d: AudioDeviceInfo?): String = when {
+        d == null -> ""
+        d.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Built-in speaker"
+        d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth · ${d.productName}"
+        d.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || d.type == AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headphones"
+        else -> d.productName?.toString() ?: "Output"
+    }
+
+    private fun openOutputs(g: Int) {
         outputError = null
-        trackM = makeTrack(masterDeviceId)
+        routedMaster = ""
+        trackM = makeTrack(masterDeviceId) { routedMaster = it }
         if (outMode == OutMode.DUAL) {
             trackC = makeTrack(cueDeviceId)
             cueQ.clear()
@@ -219,7 +285,7 @@ class Engine(private val ctx: Context) {
                 cueThread = Thread({
                     Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
                     try {
-                        while (running) {
+                        while (running && gen == g) {
                             val blk = cueQ.take()
                             tc.write(blk, 0, blk.size, AudioTrack.WRITE_BLOCKING)
                         }
@@ -232,9 +298,9 @@ class Engine(private val ctx: Context) {
     }
 
     // ------------------------------------------------------------------ render loop
-    private fun loop() {
+    private fun loop(g: Int) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        while (running) {
+        while (running && gen == g) {
             render(BLOCK)
             val tm = trackM ?: break
             when (outMode) {
