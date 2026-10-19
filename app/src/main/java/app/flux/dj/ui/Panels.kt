@@ -351,14 +351,14 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
             }
             if (c.outMode == OutMode.DUAL) {
                 SectionLabel("Headphone cue output")
-                DeviceList(c, c.cueDev, onPick = { c.doCueDev(it) })
-                SectionLabel("Align cue ↔ master  (${if (c.offsetMs == 0) "off" else if (c.offsetMs > 0) "delay master ${c.offsetMs} ms" else "delay cue ${-c.offsetMs} ms"})")
-                Slider((c.offsetMs + 300) / 600f, { c.setOffset(((it * 600f) - 300f).toInt() / 10 * 10) }, colors = SliderDefaults.colors(thumbColor = C.fx, activeTrackColor = C.fx, inactiveTrackColor = C.s3))
-                Text("Bluetooth adds 100–250 ms of latency. If the beat in your headphones trails the room, delay the master by the same amount.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
+                DeviceList(c, c.cueDev, allowDefault = false, onPick = { c.doCueDev(it) })
+                if (c.cueDev.isNotEmpty() && c.cueDev == c.masterDev) Text("Master and cue are the same device — pick two different outputs.", style = T.tab.copy(color = C.bad, fontSize = 12.sp))
+                if (c.routedCue.isNotEmpty()) Text("Cue playing through: ${c.routedCue}", style = T.tab.copy(color = if (c.routedCue == c.routedTo) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
+                if (c.routedCue.isNotEmpty() && c.routedCue == c.routedTo) Text("Android put master and cue on the same device. Try the other way round (Bluetooth as master, speaker as cue), or use USB / wired headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
+                AlignCard(c, onDismiss)
             }
             if (c.outMode == OutMode.SPLIT) {
-                SectionLabel("Align cue ↔ master  (${c.offsetMs} ms)")
-                Slider((c.offsetMs + 300) / 600f, { c.setOffset(((it * 600f) - 300f).toInt() / 10 * 10) }, colors = SliderDefaults.colors(thumbColor = C.fx, activeTrackColor = C.fx, inactiveTrackColor = C.s3))
+                AlignCard(c, onDismiss)
             }
             Text("Android lets most phones route to one Bluetooth speaker at a time. Wired + Bluetooth, or USB + Bluetooth, work best.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
             SectionLabel("Test outputs")
@@ -377,7 +377,7 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
             if (c.routedTo.isNotEmpty()) {
                 val wanted = c.devices.firstOrNull { it.key == c.masterDev }?.name
                 val mismatch = c.outMode != OutMode.SPLIT && wanted != null && !c.routedTo.startsWith(wanted) && !(wanted == "Bluetooth" && c.routedTo.startsWith("Bluetooth"))
-                Text("Now playing through: ${c.routedTo}", style = T.tab.copy(color = if (mismatch) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
+                Text("${if (c.outMode == OutMode.DUAL) "Master" else "Now"} playing through: ${c.routedTo}", style = T.tab.copy(color = if (mismatch) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
                 if (c.routedTo.startsWith("Built-in speaker") && c.devices.any { it.kind.startsWith("Bluetooth") })
                     Text("Hearing nothing from the speaker? Android keeps a separate volume per device, and the speaker's is often 0 while headphones are paired. Turn Bluetooth off once, raise the volume, then turn it back on.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
                 if (mismatch) Text("Android is overriding your choice of “$wanted”. Some tablets always send media to connected Bluetooth headphones — disconnect them, or use “Two devices” to keep the headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
@@ -400,9 +400,9 @@ private fun ModeCard(title: String, body: String, on: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun DeviceList(c: Controller, selected: String, onPick: (String) -> Unit) {
+private fun DeviceList(c: Controller, selected: String, allowDefault: Boolean = true, onPick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        DeviceRow("System default", "follows Android", selected.isEmpty()) { onPick("") }
+        if (allowDefault) DeviceRow("System default", "follows Android", selected.isEmpty()) { onPick("") }
         c.devices.forEach { DeviceRow(it.name, it.kind, selected == it.key) { onPick(it.key) } }
     }
 }
@@ -456,5 +456,21 @@ private fun ToggleRow(title: String, sub: String, on: Boolean, onChange: (Boolea
             Text(sub, style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
         Toggle(on, onChange)
+    }
+}
+
+@Composable
+private fun AlignCard(c: Controller, onDismiss: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(14.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text("Cue ↔ master timing", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.fx))
+        Text(
+            if (c.offsetMs == 0) "Not aligned yet. Bluetooth usually lags 100–250 ms behind the speaker."
+            else if (c.offsetMs > 0) "Master delayed by ${c.offsetMs} ms" else "Cue delayed by ${-c.offsetMs} ms",
+            style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal)
+        )
+        PillButton("Align by ear…", true, C.fx, Modifier.fillMaxWidth().height(40.dp), solid = true) { onDismiss(); c.startAlign() }
     }
 }

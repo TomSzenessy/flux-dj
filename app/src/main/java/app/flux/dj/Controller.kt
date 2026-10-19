@@ -173,6 +173,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var masterDev by mutableStateOf("")   // device key, "" = system default
     var cueDev by mutableStateOf("")
     var routedTo by mutableStateOf("")     // where Android actually sends the master
+    var routedCue by mutableStateOf("")
     var offsetMs by mutableIntStateOf(0)
     var devices by mutableStateOf<List<DeviceOpt>>(emptyList())
     var outputLabel by mutableStateOf("Speaker")
@@ -257,6 +258,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
         xfader = engine.xfader
         routedTo = engine.routedMaster
+        routedCue = engine.routedCue
         if (previewId != null && !previewLoading) {
             val pt = engine.previewTrack
             if (pt != null) {
@@ -317,13 +319,22 @@ class Controller(app: Application) : AndroidViewModel(app) {
         setRange(i, rs[(k + 1) % rs.size])
     }
     fun toggleSync(i: Int) = engine.toggleSync(i)
-    fun toggleKeyLock(i: Int) { deck(i).keyLock = !deck(i).keyLock }
-    fun toggleSlip(i: Int) { deck(i).slipOn = !deck(i).slipOn }
+    fun toggleKeyLock(i: Int) {
+        val on = !deck(i).keyLock; deck(i).keyLock = on
+        toast = if (on) "Pitch lock ON — changing the tempo keeps the song's key (no chipmunk voices)" else "Pitch lock OFF — tempo changes the pitch, like a turntable"
+    }
+    fun toggleSlip(i: Int) {
+        val on = !deck(i).slipOn; deck(i).slipOn = on
+        toast = if (on) "Slip ON — scratch, loop or roll freely: the track keeps running underneath and resumes where it would have been" else "Slip OFF"
+    }
     fun pitch(i: Int, v: Float) {
         val d = deck(i)
         d.setTempoFader(v)
     }
-    fun toggleQuantize() { quantize = !quantize; engine.decks.forEach { it.quantize = quantize } }
+    fun toggleQuantize() {
+        quantize = !quantize; engine.decks.forEach { it.quantize = quantize }
+        toast = if (quantize) "Snap ON — cues, loops and jumps land exactly on the beat" else "Snap OFF — cues and loops land exactly where you tap"
+    }
     fun setKeyShift(i: Int, s: Int) { deck(i).keyShift = s }
 
     fun setXf(v: Float) { engine.xfader = v; xfader = v }
@@ -393,9 +404,27 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun doOutMode(m: OutMode) { outMode = m; applyOutputConfig(true) }
+    fun doOutMode(m: OutMode) { outMode = m; if (m == OutMode.DUAL) ensureDualDevices(); applyOutputConfig(true) }
+
+    /** "Two devices" needs two *different*, explicit devices: room → speaker/USB/aux, ears → headphones. */
+    private fun ensureDualDevices() {
+        val speaker = devices.firstOrNull { it.kind == "Tablet speaker" }
+        val ears = devices.firstOrNull { it.kind.startsWith("Bluetooth") || it.kind == "Wired headphones" }
+        if (cueDev.isEmpty() || cueDev == masterDev || devices.none { it.key == cueDev }) {
+            cueDev = devices.firstOrNull { it.key != masterDev && it.key == ears?.key }?.key
+                ?: devices.firstOrNull { it.key != masterDev && (masterDev.isNotEmpty() || it.key != speaker?.key) }?.key ?: ""
+        }
+        if (masterDev.isEmpty() || masterDev == cueDev) {
+            masterDev = devices.firstOrNull { it.key != cueDev && it.key == speaker?.key }?.key
+                ?: devices.firstOrNull { it.key != cueDev }?.key ?: ""
+        }
+    }
     fun doMasterDev(key: String) { masterDev = key; applyOutputConfig(true) }
     fun doCueDev(key: String) { cueDev = key; applyOutputConfig(true) }
+    var aligning by mutableStateOf(false)
+    fun startAlign() { aligning = true; engine.calib = true }
+    fun stopAlign() { aligning = false; engine.calib = false }
+
     fun setOffset(ms: Int) { offsetMs = ms; engine.offsetMs = ms; sp.edit().putInt("out_offset", ms).apply() }
 
     /** key -> "N beeps → routed to X" from the last output test. */
@@ -1149,7 +1178,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         masterDev = sp.getString("dev_master_key", "") ?: ""; cueDev = sp.getString("dev_cue_key", "") ?: ""
         refreshDevices()
         // saved device ids may be stale after a reboot: drop them when no longer present
-        if (outMode == OutMode.DUAL && devices.none { it.key == cueDev }) outMode = OutMode.SINGLE
+        if (outMode == OutMode.DUAL) { ensureDualDevices(); if (cueDev.isEmpty()) outMode = OutMode.SINGLE }
         applyOutputConfig(restart = false)
         engine.start()
         // reopen whatever was on each deck last time; demos only as a fallback
