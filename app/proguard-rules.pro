@@ -1,0 +1,1 @@
+-keep class app.flux.dj.** { *; }

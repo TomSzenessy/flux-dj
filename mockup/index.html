@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FLUX mockup</title>
+<style>
+:root{--bg:#07080b;--s1:#0e1016;--s2:#141722;--s3:#1c2030;--line:#ffffff14;--tx:#e8ebf2;--mu:#7d849a;
+--a:#22d3ee;--b:#f472b6;--fx:#fbbf24;--ok:#34d399}
+*{box-sizing:border-box;margin:0;user-select:none}
+html,body{height:100%;background:#000;color:var(--tx);font:500 13px/1.2 -apple-system,"Inter","SF Pro Display",system-ui,sans-serif;overflow:hidden}
+.stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center;background:var(--bg);display:grid;grid-template-rows:44px 196px 1fr;gap:8px;padding:8px 12px 12px}
+.top{display:flex;align-items:center;gap:14px}
+.logo{font-weight:800;letter-spacing:.32em;font-size:14px}
+.logo i{color:var(--a);font-style:normal}
+.chip{height:30px;padding:0 12px;border-radius:15px;background:var(--s2);border:1px solid var(--line);display:flex;align-items:center;gap:7px;color:var(--mu);font-size:12px}
+.chip b{color:var(--tx);font-variant-numeric:tabular-nums;font-weight:600}
+.chip.rec .dot{width:8px;height:8px;border-radius:50%;background:#ef4444}
+.grow{flex:1}
+.master{display:flex;gap:3px;align-items:flex-end;height:22px}
+.master span{width:5px;border-radius:1px;background:var(--ok)}
+.waves{display:grid;grid-template-rows:1fr 1fr;gap:6px}
+.wave{position:relative;background:var(--s1);border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.wave canvas{position:absolute;inset:0;width:100%;height:100%}
+.wave .info{position:absolute;left:12px;top:8px;display:flex;gap:10px;align-items:center;font-size:12px;z-index:2}
+.wave .tag{font-weight:800;border-radius:6px;padding:3px 8px;color:#000}
+.wave .t{color:var(--mu);font-variant-numeric:tabular-nums}
+.wave .big{position:absolute;right:14px;top:6px;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;z-index:2}
+.main{display:grid;grid-template-columns:1fr 292px 1fr;gap:10px;min-height:0}
+.deck{background:linear-gradient(180deg,var(--s1),#0a0b10);border:1px solid var(--line);border-radius:16px;padding:10px;display:grid;grid-template-columns:184px 1fr 34px;gap:10px;min-height:0;position:relative}
+.deck.B{grid-template-columns:34px 1fr 184px}
+.jogcol{display:flex;flex-direction:column;align-items:center;gap:8px}
+.jog{width:172px;height:172px;border-radius:50%;position:relative;background:radial-gradient(circle at 50% 40%,#1a1e2c,#0b0d14 70%);border:1px solid var(--line)}
+.jog svg{position:absolute;inset:0}
+.jog .c{position:absolute;inset:34px;border-radius:50%;background:#10131c;border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.jog .c b{font-size:22px;font-variant-numeric:tabular-nums}
+.jog .c small{color:var(--mu);font-size:10px;letter-spacing:.1em}
+.tr{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:6px;width:100%}
+.btn{height:44px;border-radius:12px;background:var(--s3);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;letter-spacing:.06em;font-size:12px}
+.btn.play{background:var(--c);color:#000}
+.btn.on{background:color-mix(in srgb,var(--c) 22%,transparent);color:var(--c);border-color:var(--c)}
+.A{--c:var(--a)}.B{--c:var(--b)}
+.right{display:flex;flex-direction:column;gap:8px;min-width:0}
+.modes{display:flex;gap:4px;background:var(--s2);padding:3px;border-radius:10px}
+.modes span{flex:1;text-align:center;padding:6px 0;border-radius:8px;font-size:11px;color:var(--mu);font-weight:600}
+.modes .on{background:var(--s3);color:var(--c)}
+.pads{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,1fr);gap:6px;flex:1}
+.pad{border-radius:11px;background:color-mix(in srgb,var(--p) 20%,#10131c);border:1px solid color-mix(in srgb,var(--p) 55%,transparent);display:flex;align-items:flex-start;padding:6px 8px;font-size:11px;font-weight:700;color:var(--p)}
+.pad.e{background:#10131c;border:1px dashed #ffffff22;color:#555b70}
+.loops{display:flex;gap:4px}
+.loops span{flex:1;text-align:center;padding:7px 0;border-radius:8px;background:var(--s2);font-size:11px;color:var(--mu);font-variant-numeric:tabular-nums}
+.loops .on{background:var(--fx);color:#000;font-weight:700}
+.pitch{position:absolute;top:10px;bottom:10px;width:46px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.pitchcol{display:flex;flex-direction:column;align-items:center;gap:6px;width:34px}.pitchcol small{font-size:9px;color:var(--mu);letter-spacing:.1em}
+.fader{position:relative;flex:1;width:34px;border-radius:17px;background:var(--s2);border:1px solid var(--line)}
+.fader i{position:absolute;left:3px;right:3px;height:30px;border-radius:12px;background:linear-gradient(#3a4056,#262a3b);border:1px solid #ffffff22}
+.fader i:after{content:"";position:absolute;left:6px;right:6px;top:50%;height:2px;background:var(--c,#fff);border-radius:1px}
+.mixer{background:linear-gradient(180deg,var(--s1),#0a0b10);border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.strips{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0}
+.strip{display:flex;flex-direction:column;align-items:center;gap:5px;min-height:0}
+.knob{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 50% 35%,#2b3047,#161926);border:1px solid var(--line);position:relative}
+.knob:after{content:"";position:absolute;left:50%;top:5px;width:2px;height:12px;background:var(--c,#fff);border-radius:1px;transform-origin:50% 15px;transform:translateX(-50%) rotate(var(--r,0deg))}
+.kl{font-size:9px;color:var(--mu);letter-spacing:.12em;margin-top:-4px}
+.knobs{display:flex;flex-direction:column;gap:4px;align-items:center}
+.fv{display:flex;gap:7px;flex:1;min-height:90px;width:100%;justify-content:center}
+.vu{display:flex;flex-direction:column-reverse;gap:2px;width:7px}
+.vu span{flex:1;border-radius:1px;background:#1b1f2d}
+.vu .g{background:var(--ok)}.vu .y{background:var(--fx)}.vu .r{background:#ef4444}
+.cuebtn{width:100%;height:26px;border-radius:8px;background:var(--s2);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;letter-spacing:.1em;color:var(--mu);border:1px solid var(--line)}
+.cuebtn.on{background:var(--fx);color:#000}
+.xf{position:relative;height:34px;border-radius:17px;background:var(--s2);border:1px solid var(--line)}
+.xf i{position:absolute;top:3px;left:calc(50% - 26px);width:52px;height:26px;border-radius:12px;background:linear-gradient(#3a4056,#262a3b);border:1px solid #ffffff22}
+.xf:before,.xf:after{position:absolute;top:9px;font-size:11px;font-weight:800}
+.xf:before{content:"A";left:14px;color:var(--a)}.xf:after{content:"B";right:14px;color:var(--b)}
+.bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.bar .btn{height:34px;font-size:11px}
+.mini{position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--a) 0 38%,#222 0)}
+</style></head><body>
+<div class="stage" id="stage">
+  <div class="top">
+    <div class="chip">☰ <b>Library</b></div>
+    <div class="logo">FL<i>U</i>X</div>
+    <div class="grow"></div>
+    <div class="chip">MASTER <b>A</b></div>
+    <div class="chip"><b style="font-size:15px;color:var(--tx)">124.0</b> BPM</div>
+    <div class="grow"></div>
+    <div class="chip rec"><span class="dot"></span><b>REC</b></div>
+    <div class="chip">FX <b>Echo</b></div>
+    <div class="chip">OUT <b>Speaker · BT cue</b></div>
+    <div class="master" id="mm"></div>
+  </div>
+  <div class="waves">
+    <div class="wave" style="--c:var(--a)"><div class="info"><span class="tag" style="background:var(--a)">A</span><b>Sunset Drive</b><span class="t">Am · 8A · 124.0</span></div><div class="big" style="color:var(--a)">01:12.4 <span class="t" style="font-size:12px">−02:38</span></div><canvas id="wa"></canvas></div>
+    <div class="wave"><div class="info"><span class="tag" style="background:var(--b)">B</span><b>Neon Pulse</b><span class="t">Cm · 5A · 126.0 <span style="color:var(--ok)">● harmonic match</span></span></div><div class="big" style="color:var(--b)">00:23.8 <span class="t" style="font-size:12px">−03:29</span></div><canvas id="wb"></canvas></div>
+  </div>
+  <div class="main">
+    <!-- deck A -->
+    <div class="deck A">
+      <div class="jogcol"><div class="jog"><svg viewBox="0 0 176 176"><circle cx="88" cy="88" r="84" fill="none" stroke="#ffffff10" stroke-width="2"/><circle cx="88" cy="88" r="84" fill="none" stroke="var(--c)" stroke-width="3" stroke-dasharray="200 330" stroke-linecap="round" transform="rotate(-90 88 88)"/><circle cx="88" cy="10" r="5" fill="var(--c)" transform="rotate(130 88 88)"/></svg><div class="c"><small>BPM</small><b>124.0</b><small>+0.0%</small></div></div>
+        <div class="tr"><div class="btn on">CUE</div><div class="btn play">▶ PLAY</div><div class="btn on">SYNC</div></div></div>
+      <div class="right">
+        <div class="modes"><span class="on">HOT CUE</span><span>LOOP</span><span>ROLL</span><span>JUMP</span><span>SAMPLE</span></div>
+        <div class="pads">
+          <div class="pad" style="--p:#22d3ee">1 INTRO</div><div class="pad" style="--p:#a78bfa">2 DROP</div><div class="pad" style="--p:#f472b6">3 BREAK</div><div class="pad" style="--p:#fbbf24">4 BUILD</div>
+          <div class="pad" style="--p:#34d399">5 OUTRO</div><div class="pad e">6</div><div class="pad e">7</div><div class="pad e">8</div></div>
+        <div class="loops"><span>¼</span><span>½</span><span>1</span><span class="on">2</span><span>4</span><span>8</span><span>16</span></div>
+      </div>
+      <div class="pitchcol"><small>+0.0</small><div class="fader" style="--c:var(--a)"><i style="top:44%"></i></div><small>±8</small></div>
+    </div>
+    <!-- mixer -->
+    <div class="mixer">
+      <div class="strips">
+        <div class="strip A"><div class="knob" style="--c:var(--a);--r:0deg"></div><div class="kl">TRIM</div>
+          <div class="knobs"><div class="knob" style="--c:var(--a);--r:40deg"></div><div class="knob" style="--c:var(--a);--r:-10deg"></div><div class="knob" style="--c:var(--a);--r:-60deg"></div></div>
+          <div class="kl">HI · MID · LOW</div><div class="knob" style="--c:var(--fx);--r:25deg"></div><div class="kl">COLOR</div>
+          <div class="fv"><div class="vu" id="v1"></div><div class="fader" style="--c:var(--a)"><i style="top:12%"></i></div></div><div class="cuebtn on">🎧 CUE</div></div>
+        <div class="strip B"><div class="knob" style="--c:var(--b);--r:0deg"></div><div class="kl">TRIM</div>
+          <div class="knobs"><div class="knob" style="--c:var(--b);--r:0deg"></div><div class="knob" style="--c:var(--b);--r:20deg"></div><div class="knob" style="--c:var(--b);--r:-90deg"></div></div>
+          <div class="kl">HI · MID · LOW</div><div class="knob" style="--c:var(--fx);--r:-35deg"></div><div class="kl">COLOR</div>
+          <div class="fv"><div class="fader" style="--c:var(--b)"><i style="top:30%"></i></div><div class="vu" id="v2"></div></div><div class="cuebtn">🎧 CUE</div></div>
+      </div>
+      <div class="xf"><i></i></div>
+      <div class="bar"><div class="btn">MIX → 16</div><div class="btn on" style="--c:var(--fx)">FX</div><div class="btn">HP MIX</div></div>
+    </div>
+    <!-- deck B -->
+    <div class="deck B">
+      <div class="pitchcol"><small>−1.6</small><div class="fader" style="--c:var(--b)"><i style="top:58%"></i></div><small>±8</small></div>
+      <div class="right">
+        <div class="modes"><span>HOT CUE</span><span class="on">LOOP</span><span>ROLL</span><span>JUMP</span><span>SAMPLE</span></div>
+        <div class="pads">
+          <div class="pad" style="--p:#fbbf24">¼ BEAT</div><div class="pad" style="--p:#fbbf24">½ BEAT</div><div class="pad" style="--p:#fbbf24;background:#fbbf24;color:#000">1 BEAT</div><div class="pad" style="--p:#fbbf24">2 BEATS</div>
+          <div class="pad" style="--p:#fbbf24">4 BEATS</div><div class="pad" style="--p:#fbbf24">8 BEATS</div><div class="pad" style="--p:#fbbf24">16 BEATS</div><div class="pad" style="--p:#fbbf24">32 BEATS</div></div>
+        <div class="loops"><span>¼</span><span>½</span><span class="on">1</span><span>2</span><span>4</span><span>8</span><span>16</span></div>
+      </div>
+      <div class="jogcol"><div class="jog"><svg viewBox="0 0 176 176"><circle cx="88" cy="88" r="84" fill="none" stroke="#ffffff10" stroke-width="2"/><circle cx="88" cy="88" r="84" fill="none" stroke="var(--c)" stroke-width="3" stroke-dasharray="90 440" stroke-linecap="round" transform="rotate(-90 88 88)"/><circle cx="88" cy="10" r="5" fill="var(--c)" transform="rotate(55 88 88)"/></svg><div class="c"><small>BPM</small><b>126.0</b><small>−1.6%</small></div></div>
+        <div class="tr"><div class="btn">CUE</div><div class="btn play">▶ PLAY</div><div class="btn on">SYNC</div></div></div>
+    </div>
+  </div>
+</div>
+<script>
+const st=document.getElementById('stage');function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`translate(-50%,-50%) scale(${s})`}fit();onresize=fit;
+function rnd(s){return()=>(s=(s*16807)%2147483647)/2147483647}
+function draw(id,seed,col,pos,zoom){const c=document.getElementById(id),r=c.getBoundingClientRect(),d=2;c.width=1280*d;c.height=108*d;const x=c.getContext('2d');x.scale(d,d);const W=1280,H=108,m=H/2,R=rnd(seed);
+ const bw=2.2;let beat=0;
+ for(let i=0;i<W/bw;i++){const t=i*bw;const ph=(i%14)/14;const kick=Math.max(0,1-ph*3.2);const lo=.3+.55*kick+.1*R(),mi=.18+.25*R()*(1-ph*.5),hi=.1+.25*R()*(ph>.5?1:.3);
+  const past=t<W/2;const al=past?.55:1;
+  const g=(h,col,a)=>{x.fillStyle=col;x.globalAlpha=a*al;x.fillRect(t,m-h*m*.92,bw-.6,h*m*1.84)};
+  g(lo,'#f43f5e',.95);g(mi,'#fbbf24',.9);g(hi,'#e0f2fe',.9);
+  if(i%14==0){x.globalAlpha=.25;x.fillStyle='#fff';x.fillRect(t,0,1,H)}}
+ x.globalAlpha=1;x.fillStyle=col;x.fillRect(W/2-1,0,2,H);
+ // cue flags
+ [[180,'#22d3ee'],[420,'#a78bfa'],[900,'#fbbf24']].forEach(([p,cc])=>{x.fillStyle=cc;x.fillRect(p,0,2,H);x.fillRect(p,0,14,12)});
+ x.fillStyle='#fbbf2430';x.fillRect(W/2+120,0,110,H);
+}
+draw('wa',7,'#22d3ee');draw('wb',23,'#f472b6');
+function vu(id,n){const e=document.getElementById(id);for(let i=0;i<n;i++){const s=document.createElement('span');s.className=i<n*.62?(i<n*.45?'g':'g'):i<n*.82?'y':'r';if(i>=n*.7)s.className='';e.appendChild(s)}}
+vu('v1',16);vu('v2',16);
+(function(){const e=document.getElementById('mm');for(let i=0;i<10;i++){const s=document.createElement('span');s.style.height=(6+i*1.6)+'px';if(i>7)s.style.background='#fbbf24';if(i>8)s.style.background='#2a2d3a';e.appendChild(s)}})();
+// colour the VU
+document.querySelectorAll('.vu').forEach(v=>[...v.children].forEach((s,i)=>{s.className=i<9?'g':i<12?'y':''; if(i>=13)s.className=''}));
+</script></body></html>
