@@ -99,7 +99,17 @@ class ViewPrefs(private val sp: android.content.SharedPreferences) {
     }
 }
 
-class DeviceOpt(val id: Int, val name: String, val kind: String)
+/** Outputs that can actually play music (no call/SCO profile, earpiece or internal routes). */
+private val MEDIA_TYPES: Set<Int> = buildSet {
+    addAll(listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL, AudioDeviceInfo.TYPE_AUX_LINE, AudioDeviceInfo.TYPE_HDMI,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY))
+    if (Build.VERSION.SDK_INT >= 26) add(AudioDeviceInfo.TYPE_USB_HEADSET)
+    if (Build.VERSION.SDK_INT >= 31) { add(AudioDeviceInfo.TYPE_BLE_HEADSET); add(AudioDeviceInfo.TYPE_BLE_SPEAKER) }
+}
+
+/** [key] (type + address) is stable across reconnects, unlike Android's device [id]. */
+class DeviceOpt(val id: Int, val name: String, val kind: String, val key: String)
 
 class Controller(app: Application) : AndroidViewModel(app) {
     private val ctx: Context = app
@@ -160,8 +170,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     // outputs
     var outMode by mutableStateOf(OutMode.SINGLE)
-    var masterDev by mutableIntStateOf(-1)
-    var cueDev by mutableIntStateOf(-1)
+    var masterDev by mutableStateOf("")   // device key, "" = system default
+    var cueDev by mutableStateOf("")
+    var routedTo by mutableStateOf("")     // where Android actually sends the master
     var offsetMs by mutableIntStateOf(0)
     var devices by mutableStateOf<List<DeviceOpt>>(emptyList())
     var outputLabel by mutableStateOf("Speaker")
@@ -194,27 +205,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private var lastTenths = longArrayOf(-1, -1)
     private var lastRemain = intArrayOf(-1, -1)
 
-    init {
-        outMode = OutMode.entries[sp.getInt("out_mode", 0).coerceIn(0, 2)]
-        offsetMs = sp.getInt("out_offset", 0)
-        masterDev = sp.getInt("dev_master", -1); cueDev = sp.getInt("dev_cue", -1)
-        refreshDevices()
-        // saved device ids may be stale after a reboot: drop them when no longer present
-        if (devices.none { it.id == masterDev }) masterDev = -1
-        if (devices.none { it.id == cueDev }) cueDev = -1
-        if (outMode == OutMode.DUAL && cueDev < 0) outMode = OutMode.SINGLE
-        applyOutputConfig(restart = false)
-        engine.start()
-        // reopen whatever was on each deck last time; demos only as a fallback
-        for (i in 0..1) viewModelScope.launch(Dispatchers.Default) {
-            val last = lastLoaded(i)
-            if (last != null) loadItem(i, last, auto = true)
-            if (engine.decks[i].track == null) loadItem(i, demos[i], auto = true)
-        }
-        loadImports()
-        refreshLibrary()
-        viewModelScope.launch(Dispatchers.IO) { loadCustomSamples() }
-    }
 
     // ------------------------------------------------------------------ per-frame
     fun poll() {
@@ -266,6 +256,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             cu.trim = c.trim; cu.hi = c.hi; cu.mid = c.mid; cu.lo = c.lo; cu.color = c.color; cu.fader = c.fader; cu.cue = c.cue
         }
         xfader = engine.xfader
+        routedTo = engine.routedMaster
         if (previewId != null && !previewLoading) {
             val pt = engine.previewTrack
             if (pt != null) {
@@ -369,40 +360,73 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------------ outputs
+    private fun deviceKey(d: AudioDeviceInfo) = "${d.type}|${if (Build.VERSION.SDK_INT >= 28) d.address else ""}"
+
     fun refreshDevices() {
         val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        devices = outs.filter { it.type != AudioDeviceInfo.TYPE_TELEPHONY && it.type != AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-            .map { DeviceOpt(it.id, deviceName(it), kind(it)) }
-        val hasExtra = devices.any { it.kind != "Phone speaker" }
-        if (!hasExtra && outMode == OutMode.DUAL) outputWarn = "Only one output connected."
+        devices = outs.filter { it.type in MEDIA_TYPES }
+            .map { DeviceOpt(it.id, deviceName(it), kind(it), deviceKey(it)) }
+            .distinctBy { it.key }
+            .sortedBy { if (it.kind == "Tablet speaker") 0 else 1 }
+        if (outMode == OutMode.DUAL && devices.size < 2) outputWarn = "Only one output connected."
+        // ids change when devices reconnect: re-resolve the saved choices
+        engine.masterDeviceId = devices.firstOrNull { it.key == masterDev }?.id ?: -1
+        engine.cueDeviceId = if (outMode == OutMode.DUAL) devices.firstOrNull { it.key == cueDev }?.id ?: -1 else -1
     }
 
     private fun kind(d: AudioDeviceInfo) = when (d.type) {
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Phone speaker"
-        AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_AUX_LINE -> "Wired / aux"
-        AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB"
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
-        else -> if (Build.VERSION.SDK_INT >= 31 && (d.type == AudioDeviceInfo.TYPE_BLE_HEADSET || d.type == AudioDeviceInfo.TYPE_BLE_SPEAKER)) "Bluetooth LE" else "Other"
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Tablet speaker"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headphones"
+        AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL, AudioDeviceInfo.TYPE_AUX_LINE -> "Line out / aux"
+        AudioDeviceInfo.TYPE_HDMI -> "HDMI"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+        else -> if (Build.VERSION.SDK_INT >= 31 && (d.type == AudioDeviceInfo.TYPE_BLE_HEADSET || d.type == AudioDeviceInfo.TYPE_BLE_SPEAKER)) "Bluetooth LE" else "USB"
     }
 
     private fun deviceName(d: AudioDeviceInfo): String {
         val n = d.productName?.toString().orEmpty()
         val k = kind(d)
-        return if (k == "Phone speaker") "Built-in speaker" else if (n.isBlank() || n == Build.MODEL) k else n
+        return when {
+            k == "Tablet speaker" -> "Built-in speaker"
+            n.isBlank() || n == Build.MODEL || n.equals(Build.DEVICE, true) -> k
+            else -> n
+        }
     }
 
     fun doOutMode(m: OutMode) { outMode = m; applyOutputConfig(true) }
-    fun doMasterDev(id: Int) { masterDev = id; applyOutputConfig(true) }
-    fun doCueDev(id: Int) { cueDev = id; applyOutputConfig(true) }
+    fun doMasterDev(key: String) { masterDev = key; applyOutputConfig(true) }
+    fun doCueDev(key: String) { cueDev = key; applyOutputConfig(true) }
     fun setOffset(ms: Int) { offsetMs = ms; engine.offsetMs = ms; sp.edit().putInt("out_offset", ms).apply() }
 
+    /** key -> "N beeps → routed to X" from the last output test. */
+    var testResults by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /** Device n (1-based in list order) beeps n times, each at its own pitch, all at the same time. */
+    fun testOutputs(keys: List<String>) {
+        refreshDevices()
+        testResults = emptyMap()
+        keys.forEachIndexed { idx, key ->
+            val d = devices.firstOrNull { it.key == key } ?: return@forEachIndexed
+            val beeps = idx + 1
+            engine.playTest(d.id, beeps, 520.0 + idx * 260.0) { routed ->
+                viewModelScope.launch(Dispatchers.Main) {
+                    testResults = testResults + (key to "$beeps beep${if (beeps > 1) "s" else ""} → Android routed to: $routed")
+                }
+            }
+        }
+    }
+
+    private fun devName(key: String, fallback: String) = devices.firstOrNull { it.key == key }?.name ?: fallback
+
     fun applyOutputConfig(restart: Boolean) {
-        engine.outMode = outMode; engine.masterDeviceId = masterDev; engine.cueDeviceId = if (outMode == OutMode.DUAL) cueDev else -1
+        engine.outMode = outMode
+        engine.masterDeviceId = devices.firstOrNull { it.key == masterDev }?.id ?: -1
+        engine.cueDeviceId = if (outMode == OutMode.DUAL) devices.firstOrNull { it.key == cueDev }?.id ?: -1 else -1
         engine.offsetMs = offsetMs
-        sp.edit().putInt("out_mode", outMode.ordinal).putInt("dev_master", masterDev).putInt("dev_cue", cueDev).apply()
+        sp.edit().putInt("out_mode", outMode.ordinal).putString("dev_master_key", masterDev).putString("dev_cue_key", cueDev).apply()
         outputLabel = when (outMode) {
-            OutMode.SINGLE -> devices.firstOrNull { it.id == masterDev }?.name ?: "Default output"
-            OutMode.DUAL -> (devices.firstOrNull { it.id == masterDev }?.name ?: "Default") + " + " + (devices.firstOrNull { it.id == cueDev }?.name ?: "cue")
+            OutMode.SINGLE -> devName(masterDev, "System default")
+            OutMode.DUAL -> devName(masterDev, "Default") + " + " + devName(cueDev, "cue")
             OutMode.SPLIT -> "Split cable (L cue · R master)"
         }
         if (restart) viewModelScope.launch(Dispatchers.Default) { engine.reopenOutputs() }
@@ -1117,6 +1141,27 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     /** Library ranking relative to a reference track (what's on the other deck). */
     fun reference(forDeck: Int): Track? = engine.decks[1 - forDeck].track
+
+    // Startup runs last so every property above is initialised before background work touches it.
+    init {
+        outMode = OutMode.entries[sp.getInt("out_mode", 0).coerceIn(0, 2)]
+        offsetMs = sp.getInt("out_offset", 0)
+        masterDev = sp.getString("dev_master_key", "") ?: ""; cueDev = sp.getString("dev_cue_key", "") ?: ""
+        refreshDevices()
+        // saved device ids may be stale after a reboot: drop them when no longer present
+        if (outMode == OutMode.DUAL && devices.none { it.key == cueDev }) outMode = OutMode.SINGLE
+        applyOutputConfig(restart = false)
+        engine.start()
+        // reopen whatever was on each deck last time; demos only as a fallback
+        for (i in 0..1) viewModelScope.launch(Dispatchers.Default) {
+            val last = lastLoaded(i)
+            if (last != null) loadItem(i, last, auto = true)
+            if (engine.decks[i].track == null) loadItem(i, demos[i], auto = true)
+        }
+        loadImports()
+        refreshLibrary()
+        viewModelScope.launch(Dispatchers.IO) { loadCustomSamples() }
+    }
 
     override fun onCleared() { engine.stop(); super.onCleared() }
 }
