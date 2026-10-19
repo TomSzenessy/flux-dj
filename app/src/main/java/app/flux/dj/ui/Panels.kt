@@ -378,6 +378,8 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 val wanted = c.devices.firstOrNull { it.key == c.masterDev }?.name
                 val mismatch = c.outMode != OutMode.SPLIT && wanted != null && !c.routedTo.startsWith(wanted) && !(wanted == "Bluetooth" && c.routedTo.startsWith("Bluetooth"))
                 Text("Now playing through: ${c.routedTo}", style = T.tab.copy(color = if (mismatch) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
+                if (c.routedTo.startsWith("Built-in speaker") && c.devices.any { it.kind.startsWith("Bluetooth") })
+                    Text("Hearing nothing from the speaker? Android keeps a separate volume per device, and the speaker's is often 0 while headphones are paired. Turn Bluetooth off once, raise the volume, then turn it back on.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
                 if (mismatch) Text("Android is overriding your choice of “$wanted”. Some tablets always send media to connected Bluetooth headphones — disconnect them, or use “Two devices” to keep the headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
             }
             c.engine.outputError?.let { Text("Output error: $it", style = T.tab.copy(color = C.bad, fontSize = 11.sp)) }
