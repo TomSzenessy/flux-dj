@@ -419,6 +419,9 @@ fun ViewPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
             ToggleRow("Loop controls", "Loop on/off, ÷2 / ×2", v.loops) { v.loops = it; v.save() }
             ToggleRow("EQ & knobs", "Trim, EQ, colour FX, master, headphone", v.eq) { v.eq = it; v.save() }
             ToggleRow("Level meters", "Channel LED meters", v.meters) { v.meters = it; v.save() }
+            Spacer(Modifier.height(4.dp))
+            SectionLabel("Behaviour")
+            ToggleRow("Scratch when dragging waveform", "Off: dragging the waveform searches silently (jog wheels always scratch)", c.waveScratch) { c.setWaveScratchPref(it) }
             ToggleRow("Mixer", "Channel faders & crossfader", v.mixer) { v.mixer = it; v.save() }
         }
     }

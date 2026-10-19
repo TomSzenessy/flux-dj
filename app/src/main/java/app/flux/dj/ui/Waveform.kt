@@ -174,6 +174,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                     if (pressed.size >= 2) {
                         val dd = (pressed[0].position - pressed[1].position).getDistance().coerceAtLeast(1f)
                         if (mode == 1) d.scratchEnd()
+                        if (mode == 4) d.searching = false
                         if (mode != 2) { mode = 2; dist0 = dd; z0 = c.zoomSec }
                         else c.zoomSec = (z0 * dist0 / dd).coerceIn(1f, 48f)
                         ev.changes.forEach { it.consume() }
@@ -186,13 +187,19 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                             if (mode == 0 && abs(tot) > slop) { mode = 3; tot = 0f }
                             if (mode == 3) c.gridDrag(i, ch.positionChange().x * fpp.toDouble())
                         } else {
-                            if (mode == 0 && abs(tot) > slop) { mode = 1; p0 = d.pos; d.scratchBegin(); tot = 0f }
+                            if (mode == 0 && abs(tot) > slop) {
+                                p0 = d.pos; tot = 0f
+                                // scratch sound only if enabled in VIEW; otherwise a silent needle search
+                                if (c.waveScratch) { mode = 1; d.scratchBegin() } else { mode = 4; d.searching = true }
+                            }
                             if (mode == 1) d.scratchTo(p0 - tot * fpp)
+                            if (mode == 4) d.seek(p0 - tot * fpp)
                         }
                         ch.consume()
                     }
                 }
                 if (mode == 1) d.scratchEnd()
+                if (mode == 4) d.searching = false
             }
         }
     ) {

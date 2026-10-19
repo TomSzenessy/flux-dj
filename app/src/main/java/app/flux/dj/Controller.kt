@@ -110,6 +110,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
     val tick = mutableLongStateOf(0L)
     var zoomSec by mutableFloatStateOf(8f)
     var showRemain by mutableStateOf(true)
+    /** Dragging the waveform scratches (audible) instead of a silent search. */
+    var waveScratch by mutableStateOf(sp.getBoolean("wave_scratch", false))
+    fun setWaveScratchPref(on: Boolean) { waveScratch = on; sp.edit().putBoolean("wave_scratch", on).apply() }
     var phaseDiff by mutableStateOf<Float?>(null)
     var pendingLoad by mutableStateOf<Pair<Int, LibItem>?>(null)
     var sampleNames by mutableStateOf(SampleBank.names.toList())

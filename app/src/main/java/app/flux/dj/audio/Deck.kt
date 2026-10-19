@@ -34,6 +34,8 @@ class Deck(val index: Int) {
     val hotCues = DoubleArray(8) { -1.0 }
     @Volatile var hotCueRev = 0              // bumps on change (UI refresh)
     @Volatile var quantize = true
+    /** Silent needle search: output is muted and the playhead only moves by seeks. */
+    @Volatile var searching = false
 
     private var slipPos = 0.0
     private var slipActive = false
@@ -165,6 +167,11 @@ class Deck(val index: Int) {
         val frames = if (complete) t.frames else minOf(t.available, pcm.size / 2)
         val lastIdx = maxOf(2, frames - 3)
         if (!seekReq.isNaN()) { pos = seekReq; seekReq = Double.NaN; resetGrains = true; rate = if (playing) rate else 0.0 }
+        if (searching) {
+            java.util.Arrays.fill(oL, 0, n, 0f); java.util.Arrays.fill(oR, 0, n, 0f)
+            rate = 0.0; level = 0f; resetGrains = true
+            return
+        }
         var posD = pos
         val base = ratioBase()
         effRatio = base
