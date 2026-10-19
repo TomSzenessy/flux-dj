@@ -177,7 +177,7 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         1 -> { color = C.fx; label = beatLabel(LOOP_B[k]); sub = "BEAT"; lit = u.loopOn && abs(u.loopBeats - LOOP_B[k]) < 0.001f }
         2 -> { color = C.cue[2]; label = beatLabel(ROLL_B[k]); sub = "ROLL" }
         3 -> { color = C.cue[1]; val b = JUMP_B[k]; label = (if (b > 0) "+" else "−") + beatLabel(abs(b)); sub = "JUMP" }
-        4 -> { color = C.cue[4]; label = c.sampleNames[k]; sub = "HOLD · EDIT" }
+        4 -> { color = C.cue[4]; label = c.sampleNames[k]; sub = "HOLD" }
         5 -> { color = C.cue[6]; val s = k - 4; label = if (s > 0) "+$s" else if (s < 0) "−${-s}" else "0"; sub = "KEY"; lit = u.keyShift == s }
     }
     PressBox(
@@ -202,8 +202,8 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
                 .border(1.dp, if (empty) Color(0x22FFFFFF) else color.copy(alpha = if (p || lit) 1f else 0.5f), RoundedCornerShape(12.dp))
         ) {
             val tc = if (p || lit) Color.Black else if (empty) C.dim else color
-            Text(label, Modifier.align(Alignment.Center), style = T.tab.copy(color = tc, fontWeight = FontWeight.Bold, fontSize = if (label.length > 3) 11.sp else 17.sp), textAlign = TextAlign.Center, maxLines = 1)
-            if (sub.isNotEmpty()) Text(sub, Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp), style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.8.sp, color = tc.copy(alpha = 0.7f)))
+            Text(label, Modifier.align(Alignment.Center), style = T.tab.copy(color = tc, fontWeight = FontWeight.Bold, fontSize = if (label.length > 2) 10.sp else 17.sp, letterSpacing = 0.sp), textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
+            if (sub.isNotEmpty()) Text(sub, Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp), style = T.cap.copy(fontSize = 6.5.sp, letterSpacing = 0.3.sp, color = tc.copy(alpha = 0.7f)), maxLines = 1, softWrap = false)
         }
     }
 }
