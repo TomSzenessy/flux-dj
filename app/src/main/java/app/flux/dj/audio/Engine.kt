@@ -272,30 +272,34 @@ class Engine(private val ctx: Context) {
         Thread({
             var t: AudioTrack? = null
             try {
-                val min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+                // Same stream setup as the real outputs (fast for speaker/wired/USB, normal for Bluetooth),
+                // otherwise Android may park the test on a different output than the music would use.
+                val d = devices().firstOrNull { it.id == devId }
+                val fast = !isBluetooth(d)
+                val min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
                 t = AudioTrack.Builder()
                     .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(SR).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(SR).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
                     .setTransferMode(AudioTrack.MODE_STREAM)
-                    .setBufferSizeInBytes(max(min, SR))
+                    .setPerformanceMode(if (fast) AudioTrack.PERFORMANCE_MODE_LOW_LATENCY else AudioTrack.PERFORMANCE_MODE_NONE)
+                    .setBufferSizeInBytes(max(min, SR * 4))
                     .build()
-                if (devId >= 0) devices().firstOrNull { it.id == devId }?.let { d -> t.setPreferredDevice(d) }
-                // 0.4 s lead-in so Bluetooth has woken up, then N beeps of 160 ms with 220 ms gaps
+                if (d != null) t.setPreferredDevice(d)
                 val beep = (SR * 0.16).toInt(); val gap = (SR * 0.22).toInt(); val lead = (SR * 0.4).toInt()
                 val total = lead + beeps * (beep + gap)
-                val pcm = ShortArray(total * 2)
+                val pcm = FloatArray(total * 2)
                 for (b in 0 until beeps) {
                     val st = lead + b * (beep + gap)
                     for (k in 0 until beep) {
                         val env = minOf(1.0, k / 300.0, (beep - k) / 300.0)
-                        val v = (kotlin.math.sin(2 * PI * freq * k / SR) * env * 0.5 * 32767).toInt().toShort()
+                        val v = (kotlin.math.sin(2 * PI * freq * k / SR) * env * 0.5).toFloat()
                         pcm[(st + k) * 2] = v; pcm[(st + k) * 2 + 1] = v
                     }
                 }
                 t.play()
-                t.write(pcm, 0, pcm.size)
-                onRouted(describe(t.routedDevice).ifEmpty { "unknown" })
-                Thread.sleep(200)
+                t.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
+                onRouted(describe(t.routedDevice).ifEmpty { "unknown" })   // read after audio is flowing
+                Thread.sleep(400)
             } catch (e: Exception) {
                 onRouted("error: ${e.message}")
             } finally {
