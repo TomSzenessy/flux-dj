@@ -342,16 +342,20 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
         LaunchedEffect(visible) { if (visible) c.refreshDevices() }
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ModeCard("Single output", "Everything to one device. Headphone cue is shown on the meters only.", c.outMode == OutMode.SINGLE) { c.doOutMode(OutMode.SINGLE) }
-            ModeCard("Two devices", "Master to one output, headphone cue to another — e.g. aux/USB for the room and Bluetooth for your ears.", c.outMode == OutMode.DUAL) { c.doOutMode(OutMode.DUAL) }
-            ModeCard("Split cable", "One stereo jack with a splitter: left = cue, right = master. Works with any wired headset + adapter.", c.outMode == OutMode.SPLIT) { c.doOutMode(OutMode.SPLIT) }
+            if (c.dualPossible || c.outMode == OutMode.DUAL)
+                ModeCard("Two devices", "Room on one device, headphone cue on another: Bluetooth + tablet speaker or USB-C.", c.outMode == OutMode.DUAL) { c.doOutMode(OutMode.DUAL) }
+            if (c.splitPossible || c.outMode == OutMode.SPLIT)
+                ModeCard("Split cable", "USB-C headphone adapter + splitter: left = cue, right = master.", c.outMode == OutMode.SPLIT) { c.doOutMode(OutMode.SPLIT) }
+            if (!c.dualPossible) Text("Connect Bluetooth headphones to cue on them while the speaker or USB-C plays the room.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
 
             if (c.outMode != OutMode.SPLIT) {
                 SectionLabel(if (c.outMode == OutMode.DUAL) "Master output" else "Output")
-                DeviceList(c, c.masterDev, onPick = { c.doMasterDev(it) })
+                DeviceList(c, c.masterDev, allowDefault = c.outMode != OutMode.DUAL, onPick = { c.doMasterDev(it) })
             }
             if (c.outMode == OutMode.DUAL) {
                 SectionLabel("Headphone cue output")
-                DeviceList(c, c.cueDev, allowDefault = false, onPick = { c.doCueDev(it) })
+                DeviceList(c, c.cueDev, allowDefault = false, options = c.cueOptions(), onPick = { c.doCueDev(it) })
+                Text("Headphones play only decks with CUE switched on. Turn the CUE·M knob (bottom of the mixer) to blend the room mix in.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
                 if (c.cueDev.isNotEmpty() && c.cueDev == c.masterDev) Text("Master and cue are the same device — pick two different outputs.", style = T.tab.copy(color = C.bad, fontSize = 12.sp))
                 if (c.routedCue.isNotEmpty()) Text("Cue playing through: ${c.routedCue}", style = T.tab.copy(color = if (c.routedCue == c.routedTo) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
                 if (c.routedCue.isNotEmpty() && c.routedCue == c.routedTo) Text("Android put master and cue on the same device. Try the other way round (Bluetooth as master, speaker as cue), or use USB / wired headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
@@ -360,7 +364,7 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
             if (c.outMode == OutMode.SPLIT) {
                 AlignCard(c, onDismiss)
             }
-            Text("Android lets most phones route to one Bluetooth speaker at a time. Wired + Bluetooth, or USB + Bluetooth, work best.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
+            Text("Android plays to one Bluetooth device at a time, and the speaker and USB-C share one output — so two devices always means one Bluetooth + one wired/speaker.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
             SectionLabel("Test outputs")
             Text("Every device beeps a different number of times at the same moment — 1st device once, 2nd twice… Listen to which speaker plays what.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
             PillButton("▶  Test all outputs at once", false, C.ok, Modifier.fillMaxWidth().height(40.dp)) { c.testOutputs(c.devices.map { it.key }) }
@@ -400,10 +404,10 @@ private fun ModeCard(title: String, body: String, on: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun DeviceList(c: Controller, selected: String, allowDefault: Boolean = true, onPick: (String) -> Unit) {
+private fun DeviceList(c: Controller, selected: String, allowDefault: Boolean = true, options: List<app.flux.dj.DeviceOpt>? = null, onPick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (allowDefault) DeviceRow("System default", "follows Android", selected.isEmpty()) { onPick("") }
-        c.devices.forEach { DeviceRow(it.name, it.kind, selected == it.key) { onPick(it.key) } }
+        (options ?: c.devices).forEach { DeviceRow(it.name, it.kind, selected == it.key) { onPick(it.key) } }
     }
 }
 
