@@ -97,6 +97,12 @@ class Engine(private val ctx: Context) {
     private val bus = BeatFxBus()
     private val masterDelay = AlignDelay(SR / 2)
     private val cueDelay = AlignDelay(SR / 2)
+
+    /** Alignment mode: music muted, both outputs click on every beat (120 BPM). */
+    @Volatile var calib = false
+    private var calibPhase = 0
+    /** Frames since the last click (for the UI pulse). */
+    @Volatile var calibSinceClick = 0
     private val outM = FloatArray(BLOCK * 2)
     private val outC = FloatArray(BLOCK * 2)
 
@@ -105,6 +111,9 @@ class Engine(private val ctx: Context) {
     private var trackM: AudioTrack? = null
     private var trackC: AudioTrack? = null
     private val cueQ = ArrayBlockingQueue<FloatArray>(6)
+    private val cuePool = Array(10) { FloatArray(BLOCK * 2) }   // reused: no allocation per block
+    private var cuePoolIdx = 0
+    @Volatile var routedCue: String = ""
     private var fxCross = 0f
     private var xfGainA = 1f; private var xfGainB = 0f
     private var fxLevelS = 0f
@@ -205,17 +214,47 @@ class Engine(private val ctx: Context) {
     private fun devices(): Array<AudioDeviceInfo> =
         (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager).getDevices(AudioManager.GET_DEVICES_OUTPUTS)
 
-    private fun makeTrack(devId: Int, onRoute: ((String) -> Unit)? = null): AudioTrack? {
+    /**
+     * Low-latency ("fast") tracks all share the device's single primary output, so two of them can never
+     * reach two different devices. Use them only for a single non-Bluetooth output.
+     */
+    private fun isBluetooth(d: AudioDeviceInfo?) = d != null && (d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+        (Build.VERSION.SDK_INT >= 31 && (d.type == AudioDeviceInfo.TYPE_BLE_HEADSET || d.type == AudioDeviceInfo.TYPE_BLE_SPEAKER)))
+
+    /**
+     * Android only routes two streams to two devices if they sit on *different* outputs. Low-latency
+     * ("fast") tracks always share the primary output (speaker / wired / USB side); normal tracks to
+     * Bluetooth get the Bluetooth output. So: Bluetooth → normal, everything else → fast, and in
+     * "two devices" mode at most one fast track (the master) so master and cue never share an output.
+     */
+    private fun wantsFast(devId: Int, isCue: Boolean): Boolean {
+        val all = devices()
+        val d = all.firstOrNull { it.id == devId }
+        if (isBluetooth(d)) return false
+        if (devId < 0) return outMode != OutMode.DUAL      // system default: whatever Android picks
+        if (outMode == OutMode.DUAL && isCue) {
+            val m = all.firstOrNull { it.id == masterDeviceId }
+            return isBluetooth(m)                           // cue may be fast only if the master is on Bluetooth
+        }
+        return true
+    }
+
+    private fun makeTrack(devId: Int, isCue: Boolean = false, onRoute: ((String) -> Unit)? = null): AudioTrack? {
         return try {
             val min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+            val fast = wantsFast(devId, isCue)
             val t = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(SR).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .setBufferSizeInBytes(max(min, BLOCK * 2 * 4 * 3))
+                .setPerformanceMode(if (fast) AudioTrack.PERFORMANCE_MODE_LOW_LATENCY else AudioTrack.PERFORMANCE_MODE_NONE)
+                .setBufferSizeInBytes(max(min, 8192 * 2 * 4))   // capacity; the playing size adapts (see tuneLatency)
                 .build()
             if (devId >= 0) devices().firstOrNull { it.id == devId }?.let { d -> t.setPreferredDevice(d) }
+            if (Build.VERSION.SDK_INT >= 26) {
+                val minFrames = min / 8
+                t.bufferSizeInFrames = max(minFrames, if (fast) BLOCK * 4 else BLOCK * 8)
+            }
             if (onRoute != null) {
                 t.addOnRoutingChangedListener({ r -> onRoute(describe((r as AudioTrack).routedDevice)) }, null)
             }
@@ -276,18 +315,22 @@ class Engine(private val ctx: Context) {
     private fun openOutputs(g: Int) {
         outputError = null
         routedMaster = ""
+        routedCue = ""
         trackM = makeTrack(masterDeviceId) { routedMaster = it }
         if (outMode == OutMode.DUAL) {
-            trackC = makeTrack(cueDeviceId)
+            trackC = makeTrack(cueDeviceId, isCue = true) { routedCue = it }
             cueQ.clear()
             val tc = trackC
             if (tc != null) {
                 cueThread = Thread({
                     Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
                     try {
+                        var n = 0
+                        var lastU = 0
                         while (running && gen == g) {
                             val blk = cueQ.take()
                             tc.write(blk, 0, blk.size, AudioTrack.WRITE_BLOCKING)
+                            if (++n % 64 == 0) lastU = tuneLatency(tc, lastU)
                         }
                     } catch (_: InterruptedException) {}
                 }, "flux-cue").also { it.start() }
@@ -300,19 +343,31 @@ class Engine(private val ctx: Context) {
     // ------------------------------------------------------------------ render loop
     private fun loop(g: Int) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+        var n = 0
+        var lastU = 0
         while (running && gen == g) {
             render(BLOCK)
             val tm = trackM ?: break
-            when (outMode) {
-                OutMode.SINGLE -> tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
-                OutMode.SPLIT -> tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
-                OutMode.DUAL -> {
-                    val blk = outC.copyOf()
-                    if (!cueQ.offer(blk)) { cueQ.poll(); cueQ.offer(blk) }
-                    tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
-                }
+            if (outMode == OutMode.DUAL) {
+                val blk = cuePool[cuePoolIdx]; cuePoolIdx = (cuePoolIdx + 1) % cuePool.size
+                System.arraycopy(outC, 0, blk, 0, BLOCK * 2)
+                if (!cueQ.offer(blk)) { cueQ.poll(); cueQ.offer(blk) }
             }
+            tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
+            if (++n % 64 == 0) lastU = tuneLatency(tm, lastU)
         }
+    }
+
+    /** Grow the playing buffer by two blocks whenever the device reported new underruns (glitches). */
+    private fun tuneLatency(t: AudioTrack, lastU: Int): Int {
+        if (Build.VERSION.SDK_INT < 26) return lastU
+        val u = t.underrunCount
+        if (u > lastU) {
+            val cap = t.bufferCapacityInFrames
+            if (t.bufferSizeInFrames < cap) t.bufferSizeInFrames = min(cap, t.bufferSizeInFrames + BLOCK * 2)
+            outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
+        }
+        return u
     }
 
     private fun xfGains(x: Float, c: Curve): Pair<Float, Float> = when (c) {
@@ -480,6 +535,17 @@ class Engine(private val ctx: Context) {
                 p++
             }
             previewPos = p.toDouble()
+        }
+        // ---- alignment clicks (replace the music on both outputs, before the alignment delays)
+        if (calib) {
+            val period = SR / 2
+            for (k in 0 until n) {
+                val p = calibPhase
+                val v = if (p < 900) (sin(2 * PI * 1800.0 * p / SR) * exp(-p / 160.0) * 0.8 + sin(2 * PI * 120.0 * p / SR) * exp(-p / 300.0) * 0.6).toFloat() else 0f
+                mL[k] = v; mR[k] = v; cL[k] = v; cR[k] = v
+                calibPhase = if (p + 1 >= period) 0 else p + 1
+            }
+            calibSinceClick = calibPhase
         }
         // ---- outputs
         when (outMode) {

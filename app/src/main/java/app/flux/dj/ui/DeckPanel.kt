@@ -90,10 +90,9 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
                 PillButton("SYNC", u.synced, C.fx, Modifier.weight(1f).fillMaxHeight(), solid = true) { c.toggleSync(i) }
             }
             Row(Modifier.fillMaxWidth().height(chipsH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Chip("KEYLOCK", u.keyLock, col, Modifier.weight(1.7f).fillMaxHeight()) { c.toggleKeyLock(i) }
-                Chip("SLIP", u.slip, col, Modifier.weight(1f).fillMaxHeight()) { c.toggleSlip(i) }
-                Chip("Q", c.quantize, col, Modifier.weight(0.6f).fillMaxHeight()) { c.toggleQuantize() }
-                Chip("LOAD", true, col, Modifier.weight(1f).fillMaxHeight()) { onLoad() }
+                Chip("PITCH LOCK", u.keyLock, col, Modifier.weight(1.7f).fillMaxHeight()) { c.toggleKeyLock(i) }
+                Chip("SLIP", u.slip, col, Modifier.weight(0.85f).fillMaxHeight()) { c.toggleSlip(i) }
+                Chip("SNAP", c.quantize, col, Modifier.weight(1f).fillMaxHeight()) { c.toggleQuantize() }
             }
         }
     }

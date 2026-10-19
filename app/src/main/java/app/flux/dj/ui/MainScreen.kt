@@ -73,6 +73,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
                 }
             }
         }
+        if (c.aligning) AlignScreen(c)
         c.sampleEdit?.let { k ->
             Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.sampleEdit = null }, contentAlignment = Alignment.Center) {
                 Column(
