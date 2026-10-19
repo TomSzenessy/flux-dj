@@ -42,7 +42,7 @@ class Engine(private val ctx: Context) {
     @Volatile var xfader = 0.5f
     @Volatile var curve = Curve.SMOOTH
     @Volatile var master = 0.8f
-    @Volatile var hpMix = 0.35f
+    @Volatile var hpMix = 0f      // 0 = headphones hear only CUE'd decks
     @Volatile var hpLevel = 0.8f
     @Volatile var masterMeterL = 0f
     @Volatile var masterMeterR = 0f
@@ -101,6 +101,16 @@ class Engine(private val ctx: Context) {
     /** Alignment mode: music muted, both outputs click on every beat (120 BPM). */
     @Volatile var calib = false
     private var calibPhase = 0
+    /** One bar of drums at 120 BPM (kick every beat, hats between, clap on 2 & 4) for alignment. */
+    val calibLoop: FloatArray by lazy {
+        val beat = SR / 2; val loop = FloatArray(beat * 4)
+        val kick = Synth.kick(); val hat = Synth.hat(false); val clap = Synth.clap()
+        fun put(s: FloatArray, at: Int, g: Float) { for (i in s.indices) { val j = at + i; if (j < loop.size) loop[j] += s[i] * g } }
+        for (b in 0 until 4) { put(kick, b * beat, 0.9f); put(hat, b * beat + beat / 2, 0.45f); if (b % 2 == 1) put(clap, b * beat, 0.45f) }
+        loop
+    }
+    /** Current playhead inside [calibLoop] (frames). */
+    @Volatile var calibPos = 0
     /** Frames since the last click (for the UI pulse). */
     @Volatile var calibSinceClick = 0
     private val outM = FloatArray(BLOCK * 2)
@@ -540,16 +550,18 @@ class Engine(private val ctx: Context) {
             }
             previewPos = p.toDouble()
         }
-        // ---- alignment clicks (replace the music on both outputs, before the alignment delays)
+        // ---- alignment loop (replaces the music on both outputs, before the alignment delays)
         if (calib) {
-            val period = SR / 2
+            val loop = calibLoop
+            var p = calibPhase
             for (k in 0 until n) {
-                val p = calibPhase
-                val v = if (p < 900) (sin(2 * PI * 1800.0 * p / SR) * exp(-p / 160.0) * 0.8 + sin(2 * PI * 120.0 * p / SR) * exp(-p / 300.0) * 0.6).toFloat() else 0f
+                val v = loop[p] * 0.8f
                 mL[k] = v; mR[k] = v; cL[k] = v; cR[k] = v
-                calibPhase = if (p + 1 >= period) 0 else p + 1
+                p = if (p + 1 >= loop.size) 0 else p + 1
             }
-            calibSinceClick = calibPhase
+            calibPhase = p
+            calibPos = p
+            calibSinceClick = p % (SR / 2)
         }
         // ---- outputs
         when (outMode) {

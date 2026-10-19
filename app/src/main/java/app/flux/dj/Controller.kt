@@ -145,7 +145,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var xfader by mutableFloatStateOf(0.5f)
     var curve by mutableStateOf(Curve.SMOOTH)
     var master by mutableFloatStateOf(0.8f)
-    var hpMix by mutableFloatStateOf(0.35f)
+    var hpMix by mutableFloatStateOf(0f)
     var hpLevel by mutableFloatStateOf(0.8f)
     var masterBpm by mutableStateOf("–")
     var leader by mutableIntStateOf(0)
@@ -379,7 +379,14 @@ class Controller(app: Application) : AndroidViewModel(app) {
             .map { DeviceOpt(it.id, deviceName(it), kind(it), deviceKey(it)) }
             .distinctBy { it.key }
             .sortedBy { if (it.kind == "Tablet speaker") 0 else 1 }
-        if (outMode == OutMode.DUAL && devices.size < 2) outputWarn = "Only one output connected."
+        if (outMode == OutMode.DUAL && !dualPossible) {
+            outMode = OutMode.SINGLE; toast = "Two devices needs Bluetooth + speaker/USB — switched to single output"
+            engine.outMode = outMode; viewModelScope.launch(Dispatchers.Default) { engine.reopenOutputs() }
+        }
+        if (outMode == OutMode.SPLIT && !splitPossible) {
+            outMode = OutMode.SINGLE; toast = "Split cable needs a USB-C / wired headphone output — switched to single output"
+            engine.outMode = outMode; viewModelScope.launch(Dispatchers.Default) { engine.reopenOutputs() }
+        }
         // ids change when devices reconnect: re-resolve the saved choices
         engine.masterDeviceId = devices.firstOrNull { it.key == masterDev }?.id ?: -1
         engine.cueDeviceId = if (outMode == OutMode.DUAL) devices.firstOrNull { it.key == cueDev }?.id ?: -1 else -1
@@ -407,19 +414,29 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun doOutMode(m: OutMode) { outMode = m; if (m == OutMode.DUAL) ensureDualDevices(); applyOutputConfig(true) }
 
     /** "Two devices" needs two *different*, explicit devices: room → speaker/USB/aux, ears → headphones. */
+    /**
+     * Android can only play two devices at once if they sit on different outputs: Bluetooth on one side,
+     * the tablet's own outputs (speaker, USB-C, wired) on the other. Two Bluetooth devices, or speaker +
+     * USB-C, share one output and always end up on the same device.
+     */
+    fun isBt(d: DeviceOpt) = d.kind.startsWith("Bluetooth")
+    fun canPair(a: DeviceOpt, b: DeviceOpt) = a.key != b.key && isBt(a) != isBt(b)
+    val dualPossible: Boolean get() = devices.any { isBt(it) } && devices.any { !isBt(it) }
+    val splitPossible: Boolean get() = devices.any { it.kind == "USB" || it.kind == "Wired headphones" || it.kind == "Line out / aux" }
+    /** Cue devices that can actually play alongside the chosen master. */
+    fun cueOptions(): List<DeviceOpt> { val m = devices.firstOrNull { it.key == masterDev } ?: return emptyList(); return devices.filter { canPair(m, it) } }
+
+    /** "Two devices": room → speaker/USB, ears → Bluetooth (or the reverse), never two on the same side. */
     private fun ensureDualDevices() {
-        val speaker = devices.firstOrNull { it.kind == "Tablet speaker" }
-        val ears = devices.firstOrNull { it.kind.startsWith("Bluetooth") || it.kind == "Wired headphones" }
-        if (cueDev.isEmpty() || cueDev == masterDev || devices.none { it.key == cueDev }) {
-            cueDev = devices.firstOrNull { it.key != masterDev && it.key == ears?.key }?.key
-                ?: devices.firstOrNull { it.key != masterDev && (masterDev.isNotEmpty() || it.key != speaker?.key) }?.key ?: ""
-        }
-        if (masterDev.isEmpty() || masterDev == cueDev) {
-            masterDev = devices.firstOrNull { it.key != cueDev && it.key == speaker?.key }?.key
-                ?: devices.firstOrNull { it.key != cueDev }?.key ?: ""
+        val m0 = devices.firstOrNull { it.key == masterDev }
+        val master = m0 ?: devices.firstOrNull { it.kind == "Tablet speaker" } ?: devices.firstOrNull { !isBt(it) } ?: devices.firstOrNull()
+        masterDev = master?.key ?: ""
+        val cue = devices.firstOrNull { it.key == cueDev }
+        if (master == null || cue == null || !canPair(master, cue)) {
+            cueDev = devices.firstOrNull { master != null && canPair(master, it) }?.key ?: ""
         }
     }
-    fun doMasterDev(key: String) { masterDev = key; applyOutputConfig(true) }
+    fun doMasterDev(key: String) { masterDev = key; if (outMode == OutMode.DUAL) ensureDualDevices(); applyOutputConfig(true) }
     fun doCueDev(key: String) { cueDev = key; applyOutputConfig(true) }
     var aligning by mutableStateOf(false)
     fun startAlign() { aligning = true; engine.calib = true }

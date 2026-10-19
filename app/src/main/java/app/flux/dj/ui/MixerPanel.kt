@@ -40,7 +40,7 @@ fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
         HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(34.dp))
         if (v.eq) Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.master, { c.doMaster(it) }, C.tx, "MST", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpMix, { c.doHpMix(it) }, C.fx, "MIX", Modifier.size(40.dp), default = 0.35f, bipolar = false) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpMix, { c.doHpMix(it) }, C.fx, "CUE·M", Modifier.size(40.dp), default = 0f, bipolar = false) }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpLevel, { c.doHpLevel(it) }, C.fx, "HP", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
             Chip(when (c.curve) { Curve.SMOOTH -> "SMOOTH"; Curve.SHARP -> "SHARP"; Curve.CUT -> "CUT" }, false, C.fx, Modifier.weight(1.6f).height(28.dp)) {
                 c.doCurve(Curve.entries[(c.curve.ordinal + 1) % 3])
