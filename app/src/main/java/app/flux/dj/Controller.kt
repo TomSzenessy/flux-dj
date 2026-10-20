@@ -24,6 +24,8 @@ class LibItem(
     val id: String, val title: String, val artist: String, val durMs: Long, val uri: Uri?, val demo: Int,
     var bpm: Float = 0f, var key: Int = -1,
     var energy: Int = 0, var pattern: String = "", var vibe: String = "",
+    /** When it entered the library (epoch ms) — for "Newest" sorting. */
+    var added: Long = 0,
 )
 
 class RefMeta(val bpm: Float, val key: Int, val energy: Int, val vibe: String, val pattern: String, val title: String)
@@ -197,7 +199,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var filterBpm by mutableIntStateOf(0)       // 0 any, else ± percent
     var filterVibe by mutableStateOf<String?>(null)
     var filterEnergy by mutableIntStateOf(0)    // 0 any, 1 low, 2 mid, 3 high
-    var sortMode by mutableIntStateOf(0)        // 0 match, 1 bpm, 2 key, 3 energy, 4 title
+    var sortMode by mutableIntStateOf(0)        // 0 recommended, 1 newest, 2 A–Z, 3 artist, 4 BPM, 5 key, 6 energy
+    var hidden by mutableStateOf(sp.getStringSet("hidden", emptySet())?.toSet() ?: emptySet())
+    var showHidden by mutableStateOf(false)
+    var pendingRemove by mutableStateOf<LibItem?>(null)
     private var indexJob: Job? = null
     private val indexDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "flux-index").apply { priority = Thread.MIN_PRIORITY } }.asCoroutineDispatcher()
 
@@ -487,14 +492,14 @@ class Controller(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val out = ArrayList<LibItem>()
             try {
-                val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DURATION)
+                val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED)
                 ctx.contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj,
                     "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 30000", null,
                     "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { c ->
                     while (c.moveToNext() && out.size < 5000) {
                         val id = c.getLong(0)
                         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                        val it = LibItem("ms:$id", c.getString(1) ?: "Unknown", c.getString(2)?.takeIf { a -> a != "<unknown>" } ?: "", c.getLong(3), uri, -1)
+                        val it = LibItem("ms:$id", c.getString(1) ?: "Unknown", c.getString(2)?.takeIf { a -> a != "<unknown>" } ?: "", c.getLong(3), uri, -1, added = c.getLong(4) * 1000)
                         applyMeta(it)
                         out.add(it)
                     }
@@ -894,13 +899,35 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
 
     private fun allItems(): List<LibItem> = demos + imported + deviceTracks
+    /** Everything the user hasn't removed from the library. */
+    private fun visibleItems(): List<LibItem> = allItems().filter { it.id !in hidden }
+    val hiddenCount: Int get() = allItems().count { it.id in hidden }
+
+    fun askRemove(item: LibItem) { pendingRemove = item }
+    fun cancelRemove() { pendingRemove = null }
+    /** Hides the track from FLUX — the file itself is never touched. */
+    fun confirmRemove() {
+        val it = pendingRemove ?: return
+        pendingRemove = null
+        hidden = hidden + it.id
+        sp.edit().putStringSet("hidden", hidden).apply()
+        libRev++
+        toast = "Removed “${it.title}” from your library"
+    }
+    fun restore(item: LibItem) {
+        hidden = hidden - item.id
+        sp.edit().putStringSet("hidden", hidden).apply()
+        if (hiddenCount == 0) showHidden = false
+        libRev++
+        toast = "Restored “${item.title}”"
+    }
 
     private fun loadedIds(): Set<String> = engine.decks.mapNotNull { it.track?.id }.toSet()
 
     fun suggestions(target: Int, n: Int = 4): List<LibItem> {
         val r = refMeta(target) ?: return emptyList()
         val skip = loadedIds()
-        return allItems().asSequence().filter { it.id !in skip }.mapNotNull { i -> relevance(i, r)?.let { i to it } }
+        return visibleItems().asSequence().filter { it.id !in skip }.mapNotNull { i -> relevance(i, r)?.let { i to it } }
             .filter { tempoDiffPct(it.first.bpm, r.bpm) <= 10f }
             .sortedBy { it.second }.take(n).map { it.first }.toList()
     }
@@ -923,36 +950,42 @@ class Controller(app: Application) : AndroidViewModel(app) {
     /** Filtered + sorted list for the library panel. */
     fun filteredLibrary(target: Int, query: String): List<LibItem> {
         val ref = refMeta(target)
-        var list = allItems().filter { query.isBlank() || it.title.contains(query, true) || it.artist.contains(query, true) }
+        val base = if (showHidden) allItems().filter { it.id in hidden } else visibleItems()
+        var list = base.filter { query.isBlank() || it.title.contains(query, true) || it.artist.contains(query, true) }
         if (filterVibe != null) list = list.filter { it.vibe == filterVibe }
         if (filterEnergy != 0) list = list.filter { when (filterEnergy) { 1 -> it.energy in 1..3; 2 -> it.energy in 4..7; else -> it.energy >= 8 } }
         if (ref != null) {
-            if (filterBpm != 0) list = list.filter { it.bpm > 0 && abs(it.bpm / ref.bpm - 1f) * 100f <= filterBpm }
+            if (filterBpm != 0) list = list.filter { it.bpm > 0 && tempoDiffPct(it.bpm, ref.bpm) <= filterBpm }
             if (filterKey == 1) list = list.filter { Keys.distance(it.key, ref.key) in 0..2 }
         }
         return when (sortMode) {
-            1 -> list.sortedBy { if (it.bpm <= 0) 999f else it.bpm }
-            2 -> list.sortedBy { if (it.key < 0) 99 else (Keys.camelot(it.key).dropLast(1).toInt() * 2 + (if (it.key >= 12) 0 else 1)) }
-            3 -> list.sortedByDescending { it.energy }
-            4 -> list.sortedBy { it.title.lowercase() }
-            else -> if (ref != null) list.sortedBy { relevance(it, ref) ?: 500f } else list
+            1 -> list.sortedByDescending { it.added }
+            2 -> list.sortedBy { it.title.lowercase() }
+            3 -> list.sortedWith(compareBy({ it.artist.ifEmpty { "\uFFFF" }.lowercase() }, { it.title.lowercase() }))
+            4 -> list.sortedBy { if (it.bpm <= 0) 999f else it.bpm }
+            5 -> list.sortedBy { if (it.key < 0) 99 else (Keys.camelot(it.key).dropLast(1).toInt() * 2 + (if (it.key >= 12) 0 else 1)) }
+            6 -> list.sortedByDescending { it.energy }
+            else -> if (ref != null) list.sortedBy { relevance(it, ref) ?: 500f } else list.sortedByDescending { it.added }
         }
     }
 
-    val vibesPresent: List<String> get() = allItems().map { it.vibe }.filter { it.isNotEmpty() && it != "-" }.distinct().sorted()
+    /** Number of active filters (for the collapsed "Filters" button). */
+    val activeFilters: Int get() = listOf(filterKey != 0, filterBpm != 0, filterEnergy != 0, filterVibe != null).count { it }
+
+    val vibesPresent: List<String> get() = visibleItems().map { it.vibe }.filter { it.isNotEmpty() && it != "-" }.distinct().sorted()
 
 
     // ------------------------------------------------------------------ importing & loading
     private fun loadImports() {
         val lines = (sp.getString("imports", "") ?: "").split("\n").filter { it.contains("\t") }
         imported = lines.map { l ->
-            val (u, t) = l.split("\t", limit = 2)
-            LibItem("imp:$u", t, "", 0, Uri.parse(u), -1).also { applyMeta(it) }
+            val p = l.split("\t", limit = 3)
+            LibItem("imp:${p[0]}", p[1], "", 0, Uri.parse(p[0]), -1, added = p.getOrNull(2)?.toLongOrNull() ?: 0).also { applyMeta(it) }
         }
     }
 
     private fun saveImports() {
-        sp.edit().putString("imports", imported.joinToString("\n") { "${it.uri}\t${it.title}" }).apply()
+        sp.edit().putString("imports", imported.joinToString("\n") { "${it.uri}\t${it.title}\t${it.added}" }).apply()
     }
 
     private fun displayName(uri: Uri): String {
@@ -963,7 +996,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     fun addFiles(uris: List<Uri>) {
         val have = imported.map { it.uri.toString() }.toSet()
-        val fresh = uris.filter { it.toString() !in have }.map { LibItem("imp:$it", displayName(it), "", 0, it, -1).also { i -> applyMeta(i) } }
+        val fresh = uris.filter { it.toString() !in have }.map { LibItem("imp:$it", displayName(it), "", 0, it, -1, added = System.currentTimeMillis()).also { i -> applyMeta(i) } }
         if (fresh.isEmpty()) { toast = "Already in your library"; return }
         imported = imported + fresh; saveImports(); libRev++; startIndexing()
         toast = "Added ${fresh.size} track${if (fresh.size > 1) "s" else ""} · analysing in the background"
@@ -988,7 +1021,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             walk(android.provider.DocumentsContract.getTreeDocumentId(tree))
             withContext(Dispatchers.Main) {
                 val have = imported.map { it.uri.toString() }.toSet()
-                val fresh = found.filter { it.first.toString() !in have }.map { (u, n) -> LibItem("imp:$u", n, "", 0, u, -1).also { i -> applyMeta(i) } }
+                val fresh = found.filter { it.first.toString() !in have }.map { (u, n) -> LibItem("imp:$u", n, "", 0, u, -1, added = System.currentTimeMillis()).also { i -> applyMeta(i) } }
                 if (found.isEmpty()) toast = "No audio files found in that folder"
                 else { imported = imported + fresh; saveImports(); libRev++; startIndexing(); toast = "Added ${fresh.size} tracks from folder · analysing…" }
             }

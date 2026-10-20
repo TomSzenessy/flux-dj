@@ -110,17 +110,21 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             }
         }
 
-        // proactive suggestions
-        val sugg = remember(visible, target, rev, c.ui[0].title, c.ui[1].title) { if (ref != null) c.suggestions(target, 4) else emptyList() }
-        if (ref != null && sugg.isNotEmpty()) {
-            Text("✦ SUGGESTED AFTER “${ref.title.uppercase()}”", style = T.cap.copy(color = C.ok, letterSpacing = 0.6.sp, fontSize = 9.sp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                sugg.forEach { s -> SuggestCard(c, s, ref, dest, onDismiss) }
+        // sort (always visible) + filters (folded away)
+        var filtersOpen by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            Text("SORT", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.padding(end = 2.dp))
+            listOf(if (ref != null) "✦ Recommended" else "Recommended", "Newest", "A–Z", "Artist", "BPM", "Key", "Energy").forEachIndexed { i, t ->
+                Chip(t, c.sortMode == i, C.a, Modifier.height(30.dp)) { c.sortMode = i }
             }
         }
-
-        // filters & sort
-        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip(if (c.activeFilters > 0) "Filters · ${c.activeFilters}" else "Filters", filtersOpen || c.activeFilters > 0, C.ok, Modifier.height(30.dp)) { filtersOpen = !filtersOpen }
+            if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(30.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null }
+            Spacer(Modifier.weight(1f))
+            if (c.hiddenCount > 0) Chip(if (c.showHidden) "◀ Back to library" else "Removed · ${c.hiddenCount}", c.showHidden, C.mu, Modifier.height(30.dp)) { c.showHidden = !c.showHidden }
+        }
+        if (filtersOpen) Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             FilterRow("Key", listOf("Any" to (c.filterKey == 0), "Compatible" to (c.filterKey == 1))) { c.filterKey = it }
             FilterRow("Tempo", listOf("Any" to (c.filterBpm == 0), "±3%" to (c.filterBpm == 3), "±6%" to (c.filterBpm == 6), "±10%" to (c.filterBpm == 10))) { c.filterBpm = intArrayOf(0, 3, 6, 10)[it] }
             FilterRow("Energy", listOf("Any" to (c.filterEnergy == 0), "Low" to (c.filterEnergy == 1), "Mid" to (c.filterEnergy == 2), "High" to (c.filterEnergy == 3))) { c.filterEnergy = it }
@@ -129,11 +133,11 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
                 Chip("All", c.filterVibe == null, C.fx, Modifier.height(28.dp)) { c.filterVibe = null }
                 c.vibesPresent.forEach { v -> Chip(v, c.filterVibe == v, C.fx, Modifier.height(28.dp)) { c.filterVibe = if (c.filterVibe == v) null else v } }
             }
-            FilterRow("Sort", listOf("Best match", "BPM", "Key", "Energy", "A–Z").mapIndexed { i, t -> t to (c.sortMode == i) }, C.a) { c.sortMode = it }
+            if (ref == null) Text("Key / tempo filters compare against the track on the other deck — load one first.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
 
-        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref) { c.filteredLibrary(target, q) }
-        Text("${list.size} tracks", style = T.cap.copy(letterSpacing = 0.3.sp))
+        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref, c.showHidden, c.hidden) { c.filteredLibrary(target, q) }
+        Text(if (c.showHidden) "${list.size} removed tracks — tap Restore to bring one back" else "${list.size} tracks" + if (c.sortMode == 0 && ref != null) " · best matches for “${ref.title}” first" else "", style = T.cap.copy(letterSpacing = 0.3.sp), maxLines = 1)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (!c.libPermission) item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.s2).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -143,26 +147,6 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             }
             items(list, key = { it.id }) { it -> LibRow(c, it, ref, target, onDismiss) }
         }
-    }
-}
-
-@Composable
-private fun SuggestCard(c: Controller, it: LibItem, ref: RefMeta, dest: Int, onDismiss: () -> Unit) {
-    val kd = Keys.distance(it.key, ref.key)
-    val kcol = when (kd) { 0 -> C.ok; 1 -> C.ok; 2 -> C.fx; else -> C.dim }
-    Column(
-        Modifier.width(210.dp).clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.ok.copy(alpha = .35f), RoundedCornerShape(14.dp)).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(it.title, style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp), maxLines = 1)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(String.format("%.0f", it.bpm), style = T.num.copy(fontWeight = FontWeight.SemiBold))
-            Text(Keys.camelot(it.key), style = T.num.copy(color = kcol, fontWeight = FontWeight.Bold, fontSize = 12.sp))
-            if (it.energy > 0) Text("E${it.energy}", style = T.cap.copy(letterSpacing = 0.sp))
-            if (it.vibe.isNotEmpty()) Text(it.vibe, style = T.cap.copy(letterSpacing = 0.sp, color = C.fx))
-        }
-        Text(c.reasons(it, ref), style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 9.sp, color = C.ok), maxLines = 2)
-        Chip("Load to ${if (dest == 0) "A" else "B"}", true, C.deck(dest), Modifier.fillMaxWidth().height(28.dp)) { c.loadTap(it, dest); onDismiss() }
     }
 }
 
@@ -203,10 +187,15 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
         if (it.key >= 0) Box(Modifier.clip(RoundedCornerShape(7.dp)).background(kcol.copy(alpha = .18f)).border(1.dp, kcol.copy(alpha = .7f), RoundedCornerShape(7.dp)).padding(horizontal = 7.dp, vertical = 3.dp)) {
             Text(Keys.camelot(it.key), style = T.num.copy(color = kcol, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
+        if (c.showHidden) {
+            Chip("Restore", true, C.ok, Modifier.height(34.dp)) { c.restore(it) }
+        } else {
         HeadphoneBtn(previewing) { c.togglePreview(it) }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             if (target != 1) DeckLoadBtn("A", C.a) { c.loadTap(it, 0); onDismiss() }
             if (target != 0) DeckLoadBtn("B", C.b) { c.loadTap(it, 1); onDismiss() }
+        }
+        RemoveBtn { c.askRemove(it) }
         }
     }
     if (previewing) PreviewBar(c)
@@ -222,6 +211,18 @@ private fun DeckLoadBtn(label: String, color: Color, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text("▸ $label", style = T.tab.copy(color = color, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp), maxLines = 1, softWrap = false)
+    }
+}
+
+@Composable
+private fun RemoveBtn(onClick: () -> Unit) {
+    Box(Modifier.size(30.dp, 34.dp).clip(RoundedCornerShape(9.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
+            val col = C.dim; val sw = size.width * 0.12f
+            drawLine(col, androidx.compose.ui.geometry.Offset(0f, size.height * 0.2f), androidx.compose.ui.geometry.Offset(size.width, size.height * 0.2f), sw)
+            drawLine(col, androidx.compose.ui.geometry.Offset(size.width * 0.35f, 0f), androidx.compose.ui.geometry.Offset(size.width * 0.65f, 0f), sw)
+            drawRoundRect(col, androidx.compose.ui.geometry.Offset(size.width * 0.15f, size.height * 0.3f), androidx.compose.ui.geometry.Size(size.width * 0.7f, size.height * 0.7f), androidx.compose.ui.geometry.CornerRadius(2f), style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+        }
     }
 }
 
