@@ -74,6 +74,21 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
             }
         }
         if (c.aligning) AlignScreen(c)
+        c.pendingRemove?.let { item ->
+            Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.cancelRemove() }, contentAlignment = Alignment.Center) {
+                Column(
+                    Modifier.width(420.dp).clip(RoundedCornerShape(20.dp)).background(C.s1).border(1.dp, C.bad.copy(alpha = .5f), RoundedCornerShape(20.dp)).pointerInput2 { }.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Remove “${item.title}”?", style = T.tab.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+                    Text("It disappears from your FLUX library. The file stays on your tablet, and you can restore it any time under “Removed”.", style = T.tab.copy(color = C.mu, fontSize = 13.sp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PillButton("Cancel", false, C.tx, Modifier.weight(1f).height(44.dp)) { c.cancelRemove() }
+                        PillButton("Remove", true, C.bad, Modifier.weight(1f).height(44.dp), solid = true) { c.confirmRemove() }
+                    }
+                }
+            }
+        }
         c.sampleEdit?.let { k ->
             Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.sampleEdit = null }, contentAlignment = Alignment.Center) {
                 Column(
