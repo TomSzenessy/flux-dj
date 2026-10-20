@@ -1031,7 +1031,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
             4 -> list.sortedBy { if (it.bpm <= 0) 999f else it.bpm }
             5 -> list.sortedBy { if (it.key < 0) 99 else (Keys.camelot(it.key).dropLast(1).toInt() * 2 + (if (it.key >= 12) 0 else 1)) }
             6 -> list.sortedByDescending { it.energy }
-            else -> if (ref != null) list.sortedBy { relevance(it, ref) ?: 500f } else list.sortedByDescending { it.added }
+            // already on a deck → bottom; the rest by how well it follows the other deck
+            else -> if (ref != null) { val loaded = loadedIds(); list.sortedWith(compareBy({ it.id in loaded }, { relevance(it, ref) ?: 500f })) } else list.sortedByDescending { it.added }
         }
     }
 

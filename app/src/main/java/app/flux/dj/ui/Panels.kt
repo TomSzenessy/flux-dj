@@ -138,7 +138,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
         }
 
         val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref, c.showHidden, c.hidden) { c.filteredLibrary(target, q) }
-        Text(if (c.showHidden) "${list.size} removed tracks — tap Restore to bring one back" else "${list.size} tracks" + if (c.sortMode == 0 && ref != null) " · best matches for “${ref.title}” first" else "", style = T.cap.copy(letterSpacing = 0.3.sp), maxLines = 1)
+        Text(if (c.showHidden) "${list.size} removed track${if (list.size == 1) "" else "s"} — tap Restore to bring one back" else "${list.size} track${if (list.size == 1) "" else "s"}" + if (c.sortMode == 0 && ref != null) " · best matches for “${ref.title}” first" else "", style = T.cap.copy(letterSpacing = 0.3.sp), maxLines = 1)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (!c.libPermission) item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.s2).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -503,7 +503,7 @@ fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text("${df.format(java.util.Date(session.first().time))} · ${tf.format(java.util.Date(session.first().time))}–${tf.format(java.util.Date(session.last().time))}", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp))
                                 // the deck sequence at a glance: A → B → A → B
-                                Text(session.joinToString(" → ") { c.deckName(it.deck) } + "  ·  ${session.size} tracks", style = T.cap.copy(letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
+                                Text(session.joinToString(" → ") { c.deckName(it.deck) } + "  ·  ${session.size} track${if (session.size == 1) "" else "s"}", style = T.cap.copy(letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
                             }
                             Chip("Share", true, C.a, Modifier.height(30.dp)) {
                                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, c.tracklistText(session)) }
