@@ -81,7 +81,7 @@ private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, color: C
 }
 
 @Composable
-fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit) {
+fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}) {
     SidePanel(visible, onDismiss, "Library", 580.dp) {
         var q by remember { mutableStateOf("") }
         val rev = c.libRev
@@ -95,6 +95,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             }
             Chip("＋ Files", true, C.a, Modifier.height(38.dp)) { onAddFiles() }
             Chip("＋ Folder", true, C.a, Modifier.height(38.dp)) { onAddFolder() }
+            Chip("History", false, C.a, Modifier.height(38.dp)) { onHistory() }
         }
         Text(if (target in 0..1) "Tap a track to load it on deck ${c.deckName(target)}  ·  or drag it onto a waveform" else "Tap a track to load it on the free deck  ·  or drag it onto a waveform", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
 
@@ -477,5 +478,63 @@ private fun AlignCard(c: Controller, onDismiss: () -> Unit) {
             style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal)
         )
         PillButton("Align by ear…", true, C.fx, Modifier.fillMaxWidth().height(40.dp), solid = true) { onDismiss(); c.startAlign() }
+    }
+}
+
+// ----------------------------------------------------------------------------- Set history
+
+@Composable
+fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    SidePanel(visible, onDismiss, "Set history", 560.dp) {
+        val sessions = remember(c.history, visible) { c.historySessions() }
+        Text("Tracks are logged once they've been audible on the master for 5 seconds. The letter shows which deck played it.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+        if (sessions.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Nothing played yet — mix a few tracks and they'll show up here.", style = T.tab.copy(color = C.mu))
+            }
+        } else {
+            val tf = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+            val df = remember { java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault()) }
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                sessions.forEach { session ->
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${df.format(java.util.Date(session.first().time))} · ${tf.format(java.util.Date(session.first().time))}–${tf.format(java.util.Date(session.last().time))}", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp))
+                                // the deck sequence at a glance: A → B → A → B
+                                Text(session.joinToString(" → ") { c.deckName(it.deck) } + "  ·  ${session.size} tracks", style = T.cap.copy(letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
+                            }
+                            Chip("Share", true, C.a, Modifier.height(30.dp)) {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, c.tracklistText(session)) }
+                                ctx.startActivity(android.content.Intent.createChooser(send, "Share tracklist"))
+                            }
+                        }
+                    }
+                    items(session.size) { n ->
+                        val e = session[n]
+                        val col = C.deck(e.deck)
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.s1).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("${n + 1}", style = T.num.copy(color = C.dim, fontSize = 11.sp), modifier = Modifier.width(20.dp))
+                            Text(tf.format(java.util.Date(e.time)), style = T.num.copy(color = C.mu, fontSize = 11.sp))
+                            Box(Modifier.size(22.dp, 20.dp).clip(RoundedCornerShape(6.dp)).background(col), contentAlignment = Alignment.Center) {
+                                Text(c.deckName(e.deck), style = T.tab.copy(color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(e.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp), maxLines = 1)
+                                if (e.artist.isNotEmpty()) Text(e.artist, style = T.cap.copy(letterSpacing = 0.1.sp), maxLines = 1)
+                            }
+                            Text(String.format("%.0f", e.bpm), style = T.num.copy(fontSize = 12.sp))
+                            if (e.key >= 0) Text(Keys.camelot(e.key), style = T.num.copy(fontSize = 12.sp, color = C.ok))
+                        }
+                    }
+                }
+            }
+            if (c.confirmClearHistory) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Delete the whole history?", style = T.tab.copy(color = C.bad), modifier = Modifier.weight(1f))
+                PillButton("Cancel", false, C.tx, Modifier.width(100.dp).height(38.dp)) { c.confirmClearHistory = false }
+                PillButton("Delete", true, C.bad, Modifier.width(100.dp).height(38.dp), solid = true) { c.clearHistory() }
+            } else Chip("Clear history", false, C.bad, Modifier.height(32.dp)) { c.confirmClearHistory = true }
+        }
     }
 }

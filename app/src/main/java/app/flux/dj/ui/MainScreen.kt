@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 import app.flux.dj.Controller
 import kotlinx.coroutines.delay
 
-enum class Sheet { NONE, LIBRARY, FX, OUT, VIEW }
+enum class Sheet { NONE, LIBRARY, FX, OUT, VIEW, HISTORY }
 
 @Composable
 fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPickSample: (Int) -> Unit, onPermission: () -> Unit) {
@@ -52,7 +52,8 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
             }
         }
 
-        LibraryPanel(c, sheet == Sheet.LIBRARY, libTarget, { sheet = Sheet.NONE }, onAddFiles, onAddFolder, onPermission)
+        LibraryPanel(c, sheet == Sheet.LIBRARY, libTarget, { sheet = Sheet.NONE }, onAddFiles, onAddFolder, onPermission, onHistory = { sheet = Sheet.HISTORY })
+        HistoryPanel(c, sheet == Sheet.HISTORY) { sheet = Sheet.NONE }
         FxPanel(c, sheet == Sheet.FX) { sheet = Sheet.NONE }
         OutputPanel(c, sheet == Sheet.OUT) { sheet = Sheet.NONE }
         ViewPanel(c, sheet == Sheet.VIEW) { sheet = Sheet.NONE }

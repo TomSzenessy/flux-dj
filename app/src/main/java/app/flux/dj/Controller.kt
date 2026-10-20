@@ -28,6 +28,9 @@ class LibItem(
     var added: Long = 0,
 )
 
+/** One played track in the set history. */
+class HistEntry(val time: Long, val deck: Int, val title: String, val artist: String, val bpm: Float, val key: Int)
+
 class RefMeta(val bpm: Float, val key: Int, val energy: Int, val vibe: String, val pattern: String, val title: String)
 
 class DeckUi {
@@ -203,6 +206,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var hidden by mutableStateOf(sp.getStringSet("hidden", emptySet())?.toSet() ?: emptySet())
     var showHidden by mutableStateOf(false)
     var pendingRemove by mutableStateOf<LibItem?>(null)
+    var history by mutableStateOf<List<HistEntry>>(emptyList())
+    private val onAirMs = longArrayOf(0, 0)
+    private val loggedLoad = intArrayOf(-1, -1)   // load generation already logged per deck
+    private var lastPollNs = 0L
     private var indexJob: Job? = null
     private val indexDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "flux-index").apply { priority = Thread.MIN_PRIORITY } }.asCoroutineDispatcher()
 
@@ -215,6 +222,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------ per-frame
     fun poll() {
         tick.longValue = tick.longValue + 1
+        trackOnAir()
         for (i in 0..1) {
             val d = engine.decks[i]; val u = ui[i]; val c = engine.chans[i]; val cu = ch[i]
             u.playing = d.playing && !d.previewing || (d.previewing && d.playing)
@@ -797,6 +805,64 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun seekPreview(f: Float) = engine.previewSeek(f)
     fun previewTrack(): Track? = engine.previewTrack
 
+    // ------------------------------------------------------------------ set history
+    private val historyFile by lazy { java.io.File(ctx.filesDir, "history.tsv") }
+
+    /** A track is "played" once it has been audible on the master for 5 s (fader + crossfader up). */
+    private fun trackOnAir() {
+        val now = System.nanoTime()
+        val dt = if (lastPollNs == 0L) 0L else ((now - lastPollNs) / 1_000_000L).coerceAtMost(200)
+        lastPollNs = now
+        for (i in 0..1) {
+            val d = engine.decks[i]
+            val t = d.track ?: continue
+            val gen = loadGen.get(i)
+            val onAir = d.playing && !d.previewing && engine.chans[i].gain > 0.12f && engine.master > 0.02f
+            if (!onAir || loggedLoad[i] == gen) { if (!onAir) onAirMs[i] = 0; continue }
+            onAirMs[i] += dt
+            if (onAirMs[i] >= 5000) {
+                loggedLoad[i] = gen; onAirMs[i] = 0
+                val e = HistEntry(System.currentTimeMillis(), i, t.title, t.artist, (t.bpm * d.effRatio).toFloat(), t.key)
+                history = history + e
+                viewModelScope.launch(Dispatchers.IO) {
+                    try { historyFile.appendText("${e.time}\t${e.deck}\t${e.title.replace('\t', ' ')}\t${e.artist.replace('\t', ' ')}\t${e.bpm}\t${e.key}\n") } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    private fun loadHistory() {
+        history = try {
+            if (!historyFile.exists()) emptyList() else historyFile.readLines().mapNotNull { l ->
+                val p = l.split("\t")
+                if (p.size < 6) null else HistEntry(p[0].toLong(), p[1].toInt(), p[2], p[3], p[4].toFloatOrNull() ?: 0f, p[5].toIntOrNull() ?: -1)
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** Sessions = runs of entries without a 90-minute gap, newest session first. */
+    fun historySessions(): List<List<HistEntry>> {
+        val out = ArrayList<MutableList<HistEntry>>()
+        for (e in history) {
+            if (out.isEmpty() || e.time - out.last().last().time > 90 * 60_000L) out.add(mutableListOf())
+            out.last().add(e)
+        }
+        return out.reversed()
+    }
+
+    fun tracklistText(session: List<HistEntry>): String {
+        val tf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        val df = java.text.SimpleDateFormat("EEE d MMM yyyy", java.util.Locale.getDefault())
+        val head = "FLUX set · ${df.format(java.util.Date(session.first().time))} · ${tf.format(java.util.Date(session.first().time))}–${tf.format(java.util.Date(session.last().time))}"
+        val lines = session.mapIndexed { n, e ->
+            "${n + 1}. ${tf.format(java.util.Date(e.time))}  [${deckName(e.deck)}]  ${e.title}${if (e.artist.isNotEmpty()) " — ${e.artist}" else ""}  (${String.format("%.0f", e.bpm)} BPM${if (e.key >= 0) " · ${Keys.camelot(e.key)}" else ""})"
+        }
+        return (listOf(head, "") + lines).joinToString("\n")
+    }
+
+    var confirmClearHistory by mutableStateOf(false)
+    fun clearHistory() { history = emptyList(); confirmClearHistory = false; viewModelScope.launch(Dispatchers.IO) { historyFile.delete() } }
+
     // ------------------------------------------------------------------ library intelligence
     /** Analysis format version; "u" marks a grid the user edited by hand (never re-analysed). */
     private val metaVersion = "2"
@@ -1238,6 +1304,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             if (engine.decks[i].track == null) loadItem(i, demos[i], auto = true)
         }
         loadImports()
+        loadHistory()
         refreshLibrary()
         viewModelScope.launch(Dispatchers.IO) { loadCustomSamples() }
     }
