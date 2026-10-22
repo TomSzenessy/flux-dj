@@ -39,6 +39,7 @@ fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
         }
         HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(34.dp))
         if (v.eq) Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.outVolume, { c.doOutVolume(it) }, C.ok, "VOL", Modifier.size(40.dp), default = 1f, bipolar = false) }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.master, { c.doMaster(it) }, C.tx, "MST", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpMix, { c.doHpMix(it) }, C.fx, "CUE·M", Modifier.size(40.dp), default = 0f, bipolar = false) }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpLevel, { c.doHpLevel(it) }, C.fx, "HP", Modifier.size(40.dp), default = 0.8f, bipolar = false) }

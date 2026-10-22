@@ -354,6 +354,8 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 SectionLabel(if (c.outMode == OutMode.DUAL) "Master output" else "Output")
                 DeviceList(c, c.masterDev, allowDefault = c.outMode != OutMode.DUAL, onPick = { c.doMasterDev(it) })
             }
+            if (c.outMode == OutMode.SINGLE) Text("Practice mode: while any CUE is on, this output plays only the cued decks (even with faders down). Recording always captures the real master.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+            PictureSyncCard(c, onDismiss)
             if (c.outMode == OutMode.DUAL) {
                 SectionLabel("Headphone cue output")
                 DeviceList(c, c.cueDev, allowDefault = false, options = c.cueOptions(), onPick = { c.doCueDev(it) })
@@ -536,5 +538,19 @@ fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 PillButton("Delete", true, C.bad, Modifier.width(100.dp).height(38.dp), solid = true) { c.clearHistory() }
             } else Chip("Clear history", false, C.bad, Modifier.height(32.dp)) { c.confirmClearHistory = true }
         }
+    }
+}
+
+@Composable
+private fun PictureSyncCard(c: Controller, onDismiss: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.a.copy(alpha = .4f), RoundedCornerShape(14.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text("Picture ↔ sound", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.a))
+        Text("Measured output delay ${c.latencyMs} ms" + (if (c.visualTrimMs != 0) " · fine-tune ${if (c.visualTrimMs > 0) "+" else ""}${c.visualTrimMs} ms" else "") +
+            ". Waveforms and platters are drawn that much later, so what you see is what you hear.",
+            style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal))
+        PillButton("Sync picture to sound…", false, C.a, Modifier.fillMaxWidth().height(40.dp)) { onDismiss(); c.startAlign(picture = true) }
     }
 }

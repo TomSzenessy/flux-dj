@@ -215,7 +215,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         }
         val zoomSec = c.zoomSec
         val fpp = zoomSec * SR * d.effRatio.toFloat() / w
-        val pos = d.pos
+        val pos = c.vpos(i)
         val fStart = pos - fpp * w / 2
         val bars = min((w / 2.5f).toInt(), 1390)
         val colW = w / bars
@@ -337,7 +337,7 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
         val cols = min(OV_COLS, w.toInt())
         val colW = w / cols
         val on = t.ovNorm.let { if (it > 0f) it else peakNorm(ov).also { v -> t.ovNorm = v } }
-        val frac = (d.pos / t.frames).toFloat()
+        val frac = (c.vpos(i) / t.frames).toFloat()
         val px = frac * w
         val pts = FloatArray(cols * 4)
         for (x in 0 until cols) {
