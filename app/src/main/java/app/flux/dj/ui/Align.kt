@@ -99,7 +99,7 @@ private fun DrawScope.beats(pos: Double, shiftFrames: Double, y: Float, laneH: F
             // the ding (beat 1) is tall and bright, the tocks are short
             val hh = if (one) laneH * 0.42f else laneH * 0.22f
             drawRoundRect(if (one) C.fx else col, Offset(x - 4f, y + laneH / 2 - hh), Size(8f, hh * 2), CornerRadius(4f))
-            drawIntoCanvas { cv -> numPaint.color = (if (one) C.fx else col).toArgb(); cv.nativeCanvas.drawText("$n", x, y + laneH - 6f, numPaint) }
+            drawIntoCanvas { cv -> numPaint.color = (if (one) C.fx else col).toArgb(); cv.nativeCanvas.drawText("$n", x + 18f, y + laneH - 8f, numPaint) }
         }
         k++
     }

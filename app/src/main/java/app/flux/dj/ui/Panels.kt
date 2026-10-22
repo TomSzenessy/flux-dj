@@ -343,7 +343,7 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
     SidePanel(visible, onDismiss, "Audio output", 460.dp) {
         LaunchedEffect(visible) { if (visible) c.refreshDevices() }
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ModeCard("Single output", "Everything to one device. Headphone cue is shown on the meters only.", c.outMode == OutMode.SINGLE) { c.doOutMode(OutMode.SINGLE) }
+            ModeCard("Single output", "Everything to one device. Switch a CUE on to practise privately — the output then plays only the cued decks.", c.outMode == OutMode.SINGLE) { c.doOutMode(OutMode.SINGLE) }
             if (c.dualPossible || c.outMode == OutMode.DUAL)
                 ModeCard("Two devices", "Room on one device, headphone cue on another: Bluetooth + tablet speaker or USB-C.", c.outMode == OutMode.DUAL) { c.doOutMode(OutMode.DUAL) }
             if (c.splitPossible || c.outMode == OutMode.SPLIT)
