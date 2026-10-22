@@ -82,7 +82,8 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             val ctr = center
             val R = s / 2f - 2.dp.toPx()
             val t = d.track
-            val frac = if (t != null) (d.pos / t.frames).toFloat() else 0f
+            val vp = c.vpos(i)
+            val frac = if (t != null) (vp / t.frames).toFloat() else 0f
             // body
             drawCircle(Brush.radialGradient(listOf(Color(0xFF1B2030), Color(0xFF0A0C13)), center = Offset(ctr.x, ctr.y - R * .25f), radius = R * 1.1f), R, ctr)
             drawCircle(C.line, R, ctr, style = Stroke(1.5f))
@@ -99,7 +100,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
                 }
             }
             // spinning platter
-            val rot = if (t != null) (d.pos / FRAMES_PER_REV * 2 * PI) else 0.0
+            val rot = if (t != null) (vp / FRAMES_PER_REV * 2 * PI) else 0.0
             val pr = R * 0.74f
             drawCircle(Color(0xFF0E111A), pr, ctr)
             drawCircle(C.line, pr, ctr, style = Stroke(1f))

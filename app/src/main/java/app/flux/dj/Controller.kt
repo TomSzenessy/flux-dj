@@ -241,7 +241,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 u.bpm = if (t.bpm > 0) String.format("%.1f", t.bpm * ratio) else if (u.analysing) "···" else "–"
                 u.origBpm = if (t.bpm > 0) String.format("%.1f", t.bpm) else ""
                 u.pct = if (t.bpm > 0 || true) String.format("%+.1f%%", (ratio - 1.0) * 100) else ""
-                val sec = d.pos / SR
+                val vp = vpos(i)
+                val sec = vp / SR
                 val tenths = (sec * 10).toLong()
                 if (tenths != lastTenths[i]) {
                     lastTenths[i] = tenths
@@ -252,7 +253,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 val cs = List(8) { d.hotCues[it] >= 0 }
                 if (cs != u.cues) u.cues = cs
                 if (t.bpm > 0) {
-                    val bi = Math.floor((d.pos - t.firstBeat) / t.spb).toLong()
+                    val bi = Math.floor((vp - t.firstBeat) / t.spb).toLong()
                     if (bi >= 0) {
                         val bar = bi / 4 + 1
                         u.beat = (bi % 4).toInt() + 1
@@ -272,6 +273,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         xfader = engine.xfader
         routedTo = engine.routedMaster
         routedCue = engine.routedCue
+        latencyMs = engine.outLatencyMs.toInt()
         if (previewId != null && !previewLoading) {
             val pt = engine.previewTrack
             if (pt != null) {
@@ -452,7 +454,26 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun doMasterDev(key: String) { masterDev = key; if (outMode == OutMode.DUAL) ensureDualDevices(); applyOutputConfig(true) }
     fun doCueDev(key: String) { cueDev = key; applyOutputConfig(true) }
     var aligning by mutableStateOf(false)
-    fun startAlign() { aligning = true; engine.calib = true }
+    /** Extra picture delay on top of the measured output delay (ms, user fine-tune). */
+    var visualTrimMs by mutableIntStateOf(sp.getInt("visual_trim", 0))
+    fun setVisualTrim(ms: Int) { visualTrimMs = ms.coerceIn(-300, 500); sp.edit().putInt("visual_trim", visualTrimMs).apply() }
+    var latencyMs by mutableIntStateOf(0)
+    var outVolume by mutableFloatStateOf(sp.getFloat("out_volume", 1f))
+    fun doOutVolume(v: Float) { outVolume = v; engine.outVolume = v; sp.edit().putFloat("out_volume", v).apply() }
+
+    /**
+     * The playhead you *hear*: the engine is ahead of the speaker by the output delay, so everything
+     * on screen is drawn that much later while playing.
+     */
+    fun vpos(i: Int): Double {
+        val d = engine.decks[i]
+        if (!d.playing || d.scratching || d.searching) return d.pos
+        val delay = (engine.outLatencyMs + visualTrimMs).coerceAtLeast(0f) / 1000.0 * SR * d.effRatio
+        return (d.pos - delay).coerceAtLeast(0.0)
+    }
+    /** true = align picture to sound (single output); false = align cue to master (two outputs). */
+    var alignPicture by mutableStateOf(false)
+    fun startAlign(picture: Boolean = false) { alignPicture = picture; aligning = true; engine.calib = true }
     fun stopAlign() { aligning = false; engine.calib = false }
 
     fun setOffset(ms: Int) { offsetMs = ms; engine.offsetMs = ms; sp.edit().putInt("out_offset", ms).apply() }
@@ -1290,6 +1311,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     // Startup runs last so every property above is initialised before background work touches it.
     init {
+        engine.outVolume = outVolume
         outMode = OutMode.entries[sp.getInt("out_mode", 0).coerceIn(0, 2)]
         offsetMs = sp.getInt("out_offset", 0)
         masterDev = sp.getString("dev_master_key", "") ?: ""; cueDev = sp.getString("dev_cue_key", "") ?: ""

@@ -17,130 +17,144 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.flux.dj.Controller
+import app.flux.dj.audio.CALIB_BEAT
 import app.flux.dj.audio.OutMode
 import app.flux.dj.audio.SR
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 private const val RANGE_MS = 450
+private const val WINDOW_MS = 4000f        // lanes show four beats (one per second)
 
 /**
- * Align-by-ear: both outputs click on every beat; drag the cue lane until the
- * two clicks fuse into one. The offset is applied live while dragging.
+ * Timing alignment by ear. The loop has one beat per second (beat 1 = high "ding", 2–4 = low "tock"),
+ * so any delay under half a second is unambiguous: you always line up with the nearest beat.
+ *  - two outputs: drag the headphone lane until both outputs' beats land together;
+ *  - picture: drag until the marker crosses the line exactly when you hear the beat.
  */
 @Composable
 fun AlignScreen(c: Controller) {
-    val masterName = if (c.outMode == OutMode.SPLIT) "Master (right)" else c.routedTo.ifEmpty { "Master" }
-    val cueName = if (c.outMode == OutMode.SPLIT) "Cue (left)" else c.routedCue.ifEmpty { "Headphones" }
+    val picture = c.alignPicture
     Box(Modifier.fillMaxSize().background(Color(0xEE05060A)).pointerInput2 { }, contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 900.dp).fillMaxWidth(0.85f).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Line up the beats", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))
+            Text(if (picture) "Sync picture to sound" else "Line up the beats", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))
             Text(
-                "Both outputs now play the same drum loop. If the kicks sound doubled or smeared, one device is late. " +
-                    "Drag the lower lane until the beats you hear land together — one tight kick instead of two.",
+                if (picture) "You hear one beat per second — a high “ding” on beat 1. Drag the lane until each marker crosses the white line exactly when you hear it."
+                else "Both outputs play one beat per second — a high “ding” on beat 1. Drag the lower lane until the beats from both devices land together.",
                 style = T.tab.copy(color = C.mu, fontSize = 13.sp)
             )
-            AlignLanes(c, masterName, cueName, Modifier.fillMaxWidth().height(170.dp))
+            if (picture) PictureLane(c, Modifier.fillMaxWidth().height(170.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(170.dp))
+            val value = if (picture) c.visualTrimMs else c.offsetMs
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    when {
-                        c.offsetMs == 0 -> "In sync (no delay)"
-                        c.offsetMs > 0 -> "Master waits ${c.offsetMs} ms for the cue"
-                        else -> "Cue waits ${-c.offsetMs} ms for the master"
+                    if (picture) "Output delay ${c.latencyMs} ms" + (if (value != 0) "  ·  fine-tune ${if (value > 0) "+" else ""}$value ms" else "")
+                    else when {
+                        value == 0 -> "In sync (no delay)"
+                        value > 0 -> "Headphones were behind → master waits $value ms"
+                        else -> "Headphones were ahead → cue waits ${-value} ms"
                     },
-                    style = T.num.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
+                    style = T.num.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
                 )
                 for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(36.dp).width(52.dp)) {
-                    c.setOffset((c.offsetMs + d).coerceIn(-RANGE_MS, RANGE_MS))
+                    if (picture) c.setVisualTrim(value + d) else c.setOffset((value + d).coerceIn(-RANGE_MS, RANGE_MS))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Reset", false, C.mu, Modifier.weight(1f).height(46.dp)) { c.setOffset(0) }
+                PillButton("Reset", false, C.mu, Modifier.weight(1f).height(46.dp)) { if (picture) c.setVisualTrim(0) else c.setOffset(0) }
                 PillButton("Done", true, C.fx, Modifier.weight(2f).height(46.dp), solid = true) { c.stopAlign() }
             }
         }
     }
 }
 
-@Composable
-private fun AlignLanes(c: Controller, masterName: String, cueName: String, modifier: Modifier) {
-    val start = remember { intArrayOf(0) }
-    val loop = c.engine.calibLoop
-    // peak envelope of the drum loop, one value per 100 frames
-    val env = remember(loop) {
-        val bin = 100
-        FloatArray(loop.size / bin) { b -> var m = 0f; for (k in b * bin until (b + 1) * bin) { val v = abs(loop[k]); if (v > m) m = v }; m }
-            .let { e -> val mx = e.maxOrNull()?.coerceAtLeast(1e-4f) ?: 1f; FloatArray(e.size) { e[it] / mx } }
+private val numPaint = android.graphics.Paint().apply { isAntiAlias = true; textSize = 30f; isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER }
+
+/** Beat markers of the 1-per-second loop, positioned relative to [pos] (frames) around the centre line. */
+private fun DrawScope.beats(pos: Double, shiftFrames: Double, y: Float, laneH: Float, col: Color) {
+    val w = size.width; val mid = w / 2
+    val framesPerPx = SR * WINDOW_MS / 1000f / w
+    val first = floor((pos - mid * framesPerPx - shiftFrames) / CALIB_BEAT).toLong()
+    var k = first
+    while (true) {
+        val x = mid + ((k * CALIB_BEAT + shiftFrames - pos) / framesPerPx).toFloat()
+        if (x > w) break
+        if (x > -20) {
+            val n = (Math.floorMod(k, 4L) + 1).toInt()
+            val one = n == 1
+            // the ding (beat 1) is tall and bright, the tocks are short
+            val hh = if (one) laneH * 0.42f else laneH * 0.22f
+            drawRoundRect(if (one) C.fx else col, Offset(x - 4f, y + laneH / 2 - hh), Size(8f, hh * 2), CornerRadius(4f))
+            drawIntoCanvas { cv -> numPaint.color = (if (one) C.fx else col).toArgb(); cv.nativeCanvas.drawText("$n", x, y + laneH - 6f, numPaint) }
+        }
+        k++
     }
+}
+
+private fun Modifier.dragMs(startOf: () -> Int, onMs: (Int) -> Unit): Modifier = this.pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown()
+        val start = startOf()
+        var tot = 0f
+        val pxPerMs = size.width / WINDOW_MS
+        drag(down.id) { ch -> tot += ch.positionChange().x; onMs((start + tot / pxPerMs).roundToInt()); ch.consume() }
+    }
+}
+
+@Composable
+private fun CueLanes(c: Controller, modifier: Modifier) {
+    val masterName = if (c.outMode == OutMode.SPLIT) "Master (right)" else c.routedTo.ifEmpty { "Master" }
+    val cueName = if (c.outMode == OutMode.SPLIT) "Cue (left)" else c.routedCue.ifEmpty { "Headphones" }
     Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0A0B10)).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
-        Canvas(
-            Modifier.fillMaxSize().pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    start[0] = c.offsetMs
-                    var tot = 0f
-                    val pxPerMs = size.width / 2000f          // the lanes show 2 seconds
-                    drag(down.id) { ch ->
-                        tot += ch.positionChange().x
-                        // drag the headphone lane right = the headphones are later = delay the master
-                        c.setOffset((start[0] + tot / pxPerMs).roundToInt().coerceIn(-RANGE_MS, RANGE_MS))
-                        ch.consume()
-                    }
-                }
-            }
-        ) {
+        Canvas(Modifier.fillMaxSize().dragMs({ c.offsetMs }) { c.setOffset(it.coerceIn(-RANGE_MS, RANGE_MS)) }) {
             c.tick.longValue
             val w = size.width; val h = size.height
-            val windowMs = 2000f
-            val pxPerMs = w / windowMs
-            val framesPerPx = SR * windowMs / 1000f / w
-            val pos = c.engine.calibPos
-            val L = loop.size
-            val laneH = h * 0.36f
-            val y1 = h * 0.08f; val y2 = h * 0.56f
-            val mid = w / 2
+            val laneH = h * 0.38f; val y1 = h * 0.07f; val y2 = h * 0.55f
             drawRoundRect(C.a.copy(alpha = 0.07f), Offset(8f, y1), Size(w - 16f, laneH), CornerRadius(10f))
             drawRoundRect(C.b.copy(alpha = 0.07f), Offset(8f, y2), Size(w - 16f, laneH), CornerRadius(10f))
-            val shiftFrames = c.offsetMs * SR / 1000f
-            fun lane(y: Float, shift: Float, col: Color) {
-                var x = 10f
-                while (x < w - 10f) {
-                    var f = ((pos + (x - mid) * framesPerPx - shift).toInt()) % L
-                    if (f < 0) f += L
-                    val a = env[(f / 100).coerceIn(0, env.size - 1)]
-                    val hh = (a * laneH * 0.46f).coerceAtLeast(1f)
-                    drawLine(col, Offset(x, y + laneH / 2 - hh), Offset(x, y + laneH / 2 + hh), 2f)
-                    x += 3f
-                }
-                // beat markers (every 500 ms)
-                val beatFrames = SR / 2f
-                var k = Math.floor(((pos - mid * framesPerPx - shift) / beatFrames).toDouble()).toInt()
-                while (true) {
-                    val bx = mid + ((k * beatFrames + shift - pos) / framesPerPx)
-                    if (bx > w) break
-                    if (bx >= 0) drawLine(col.copy(alpha = 0.55f), Offset(bx, y - 4f), Offset(bx, y + 6f), 3f)
-                    k++
-                }
-            }
-            lane(y1, 0f, C.a)
-            lane(y2, shiftFrames, C.b)
-            // "now" line: what you hear at this moment
-            drawLine(Color.White.copy(alpha = 0.85f), Offset(mid, 0f), Offset(mid, h), 2f)
-            val aligned = abs(c.offsetMs) < 1
-            drawLine(if (aligned) C.ok else C.fx.copy(alpha = 0.6f), Offset(mid, y1 + laneH), Offset(mid + c.offsetMs * pxPerMs, y2), 2f)
+            val pos = c.engine.calibPos.toDouble()
+            beats(pos, 0.0, y1, laneH, C.a)
+            beats(pos, c.offsetMs * SR / 1000.0, y2, laneH, C.b)
+            drawLine(Color.White.copy(alpha = 0.85f), Offset(w / 2, 0f), Offset(w / 2, h), 2f)
         }
-        Text(masterName, Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 6.dp), style = T.cap.copy(color = C.a, letterSpacing = 0.4.sp))
-        Text(cueName, Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 4.dp), style = T.cap.copy(color = C.b, letterSpacing = 0.4.sp))
-        Text("◀ drag the lower lane ▶", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), style = T.cap.copy(color = C.dim))
+        Text(masterName, Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 4.dp), style = T.cap.copy(color = C.a, letterSpacing = 0.4.sp))
+        Text(cueName, Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 2.dp), style = T.cap.copy(color = C.b, letterSpacing = 0.4.sp))
+        Text("◀ drag the lower lane ▶", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 2.dp), style = T.cap.copy(color = C.dim))
+    }
+}
+
+@Composable
+private fun PictureLane(c: Controller, modifier: Modifier) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0A0B10)).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
+        Canvas(Modifier.fillMaxSize().dragMs({ c.visualTrimMs }) { c.setVisualTrim(it) }) {
+            c.tick.longValue
+            val w = size.width; val h = size.height
+            val laneH = h * 0.6f; val y = h * 0.2f
+            drawRoundRect(C.a.copy(alpha = 0.07f), Offset(8f, y), Size(w - 16f, laneH), CornerRadius(10f))
+            // what you see = engine position minus the output delay (+ your fine-tune)
+            val delayFrames = (c.engine.outLatencyMs + c.visualTrimMs).coerceAtLeast(0f) / 1000.0 * SR
+            val pos = c.engine.calibPos - delayFrames
+            beats(pos, 0.0, y, laneH, C.a)
+            // flash when a beat crosses the line on screen
+            val since = ((pos % CALIB_BEAT) + CALIB_BEAT) % CALIB_BEAT / SR * 1000.0
+            val flash = exp(-since / 80.0).toFloat()
+            drawCircle(Color.White.copy(alpha = 0.15f + 0.6f * flash), 14f + 10f * flash, Offset(w / 2, y - 14f))
+            drawLine(Color.White.copy(alpha = 0.85f), Offset(w / 2, 0f), Offset(w / 2, h), 2f)
+        }
+        Text("◀ drag ▶", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), style = T.cap.copy(color = C.dim))
     }
 }

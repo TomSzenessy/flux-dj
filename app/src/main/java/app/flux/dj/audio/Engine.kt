@@ -13,6 +13,8 @@ import java.util.concurrent.ArrayBlockingQueue
 import kotlin.math.*
 
 const val BLOCK = 256
+/** Alignment loop: one beat per second. */
+const val CALIB_BEAT = SR
 
 enum class OutMode { SINGLE, DUAL, SPLIT }
 enum class Curve { SMOOTH, SHARP, CUT }
@@ -100,13 +102,30 @@ class Engine(private val ctx: Context) {
 
     /** Alignment mode: music muted, both outputs click on every beat (120 BPM). */
     @Volatile var calib = false
+    /** Final volume for everything that leaves the device (not the recording). */
+    @Volatile var outVolume = 1f
+    private var outVolS = 1f
+    /** Measured delay between writing audio and hearing it on the master output (ms). */
+    @Volatile var outLatencyMs = 0f
+    private var written = 0L
+    private val ts = AudioTimestamp()
     private var calibPhase = 0
     /** One bar of drums at 120 BPM (kick every beat, hats between, clap on 2 & 4) for alignment. */
     val calibLoop: FloatArray by lazy {
-        val beat = SR / 2; val loop = FloatArray(beat * 4)
-        val kick = Synth.kick(); val hat = Synth.hat(false); val clap = Synth.clap()
-        fun put(s: FloatArray, at: Int, g: Float) { for (i in s.indices) { val j = at + i; if (j < loop.size) loop[j] += s[i] * g } }
-        for (b in 0 until 4) { put(kick, b * beat, 0.9f); put(hat, b * beat + beat / 2, 0.45f); if (b % 2 == 1) put(clap, b * beat, 0.45f) }
+        // One beat per second: any output delay (< 0.5 s) is unambiguous — the nearest beat is the right one.
+        // Beat 1 is a bright "ding", beats 2–4 a short low "tock", so you also hear where the bar starts.
+        val beat = CALIB_BEAT; val loop = FloatArray(beat * 4)
+        for (b in 0 until 4) {
+            val st = b * beat
+            val ding = b == 0
+            val len = if (ding) SR / 3 else SR / 12
+            for (k in 0 until len) {
+                val t = k / SRF
+                val v = if (ding) (sin(2 * PI * 1568.0 * t) * 0.6 + sin(2 * PI * 3136.0 * t) * 0.25) * exp(-t * 9.0)
+                        else (sin(2 * PI * 880.0 * t) * 0.7) * exp(-t * 60.0)
+                loop[st + k] = v.toFloat()
+            }
+        }
         loop
     }
     /** Current playhead inside [calibLoop] (frames). */
@@ -329,6 +348,7 @@ class Engine(private val ctx: Context) {
     private fun openOutputs(g: Int) {
         outputError = null
         routedMaster = ""
+        written = 0L; outLatencyMs = 0f
         routedCue = ""
         trackM = makeTrack(masterDeviceId) { routedMaster = it }
         if (outMode == OutMode.DUAL) {
@@ -368,8 +388,20 @@ class Engine(private val ctx: Context) {
                 if (!cueQ.offer(blk)) { cueQ.poll(); cueQ.offer(blk) }
             }
             tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
+            written += BLOCK
             if (++n % 64 == 0) lastU = tuneLatency(tm, lastU)
+            if (n % 32 == 0) measureLatency(tm)
         }
+    }
+
+    /** How far behind the writing position the speaker is, from the device's own playback timestamp. */
+    private fun measureLatency(t: AudioTrack) {
+        try {
+            if (!t.getTimestamp(ts)) return
+            val played = ts.framePosition + (System.nanoTime() - ts.nanoTime) * SR / 1_000_000_000L
+            val ms = ((written - played) * 1000f / SR).coerceIn(0f, 1000f)
+            outLatencyMs = if (outLatencyMs == 0f) ms else outLatencyMs * 0.9f + ms * 0.1f
+        } catch (_: Exception) {}
     }
 
     /** Grow the playing buffer by two blocks whenever the device reported new underruns (glitches). */
@@ -561,12 +593,16 @@ class Engine(private val ctx: Context) {
             }
             calibPhase = p
             calibPos = p
-            calibSinceClick = p % (SR / 2)
+            calibSinceClick = p % CALIB_BEAT
         }
         // ---- outputs
         when (outMode) {
             OutMode.SINGLE -> {
-                for (k in 0 until n) { outM[k * 2] = mL[k]; outM[k * 2 + 1] = mR[k] }
+                // practice mode: with any CUE on, the single output plays the headphone mix
+                // (only the cued decks, even with their faders down); the recording above keeps the master
+                val monitor = !calib && (chans[0].cue || chans[1].cue)
+                val l = if (monitor) cL else mL; val r = if (monitor) cR else mR
+                for (k in 0 until n) { outM[k * 2] = l[k]; outM[k * 2 + 1] = r[k] }
             }
             OutMode.DUAL -> {
                 masterDelay.frames = max(0, offsetMs) * SR / 1000
@@ -585,6 +621,18 @@ class Engine(private val ctx: Context) {
                 }
             }
         }
+        // ---- one volume for all outputs (ramped, so turning it never clicks)
+        val v0 = outVolS; val v1 = outVolume
+        if (v0 != 1f || v1 != 1f) {
+            val st = (v1 - v0) / n
+            var v = v0
+            for (k in 0 until n) {
+                v += st
+                outM[k * 2] *= v; outM[k * 2 + 1] *= v
+                if (outMode == OutMode.DUAL) { outC[k * 2] *= v; outC[k * 2 + 1] *= v }
+            }
+        }
+        outVolS = v1
     }
 
     private fun soft(x: Float): Float {
