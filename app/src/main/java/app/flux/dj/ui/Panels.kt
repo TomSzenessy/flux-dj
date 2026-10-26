@@ -81,7 +81,7 @@ private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, color: C
 }
 
 @Composable
-fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}) {
+fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}, onImportXml: () -> Unit = {}) {
     SidePanel(visible, onDismiss, "Library", 580.dp) {
         var q by remember { mutableStateOf("") }
         val rev = c.libRev
@@ -96,6 +96,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             Chip("＋ Files", true, C.a, Modifier.height(38.dp)) { onAddFiles() }
             Chip("＋ Folder", true, C.a, Modifier.height(38.dp)) { onAddFolder() }
             Chip("History", false, C.a, Modifier.height(38.dp)) { onHistory() }
+            if (c.rb == null) Chip("rekordbox", false, C.a, Modifier.height(38.dp)) { onImportXml() }
         }
         Text(if (target in 0..1) "Tap a track to load it on deck ${c.deckName(target)}  ·  or drag it onto a waveform" else "Tap a track to load it on the free deck  ·  or drag it onto a waveform", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
 
@@ -111,10 +112,26 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             }
         }
 
+        // crate: all tracks or a rekordbox playlist
+        var pickerOpen by remember { mutableStateOf(false) }
+        if (c.rb != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val pl = c.playlist
+            Chip(if (pl == null) "▤  All tracks  ▾" else "▤  ${pl.path}  ▾", pickerOpen || pl != null, C.fx, Modifier.height(32.dp)) { pickerOpen = !pickerOpen }
+            if (pl != null) {
+                Text("${c.playlistOnTablet(pl)} of ${pl.trackIds.size} on this tablet", style = T.cap.copy(letterSpacing = 0.2.sp))
+                Chip("✕", false, C.mu, Modifier.height(32.dp)) { c.selectPlaylist(null) }
+            }
+        }
+        if (pickerOpen && c.rb != null) {
+            PlaylistPicker(c, Modifier.weight(1f), onImportXml) { pickerOpen = false }
+            return@SidePanel
+        }
+
         // sort (always visible) + filters (folded away)
         var filtersOpen by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             Text("SORT", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.padding(end = 2.dp))
+            if (c.playlist != null) Chip("Playlist order", c.sortMode == 7, C.a, Modifier.height(30.dp)) { c.sortMode = 7 }
             listOf(if (ref != null) "✦ Recommended" else "Recommended", "Newest", "A–Z", "Artist", "BPM", "Key", "Energy").forEachIndexed { i, t ->
                 Chip(t, c.sortMode == i, C.a, Modifier.height(30.dp)) { c.sortMode = i }
             }
@@ -137,7 +154,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             if (ref == null) Text("Key / tempo filters compare against the track on the other deck — load one first.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
 
-        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref, c.showHidden, c.hidden) { c.filteredLibrary(target, q) }
+        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref, c.showHidden, c.hidden, c.playlist, c.rbMatch) { c.filteredLibrary(target, q) }
         Text(if (c.showHidden) "${list.size} removed track${if (list.size == 1) "" else "s"} — tap Restore to bring one back" else "${list.size} track${if (list.size == 1) "" else "s"}" + if (c.sortMode == 0 && ref != null) " · best matches for “${ref.title}” first" else "", style = T.cap.copy(letterSpacing = 0.3.sp), maxLines = 1)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (!c.libPermission) item {
@@ -185,6 +202,7 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
                 if (delta != null) Text(String.format("%+.1f%%", delta), style = T.cap.copy(letterSpacing = 0.sp, color = if (abs(delta) < 3f) C.ok else if (abs(delta) < 8f) C.fx else C.mu))
             }
         } else if (it.energy == 0 && it.uri != null) Text("···", style = T.cap)
+        if (it.fromRb) Text("RB", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = C.fx, fontWeight = FontWeight.Bold))
         if (it.key >= 0) Box(Modifier.clip(RoundedCornerShape(7.dp)).background(kcol.copy(alpha = .18f)).border(1.dp, kcol.copy(alpha = .7f), RoundedCornerShape(7.dp)).padding(horizontal = 7.dp, vertical = 3.dp)) {
             Text(Keys.camelot(it.key), style = T.num.copy(color = kcol, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
@@ -552,5 +570,43 @@ private fun PictureSyncCard(c: Controller, onDismiss: () -> Unit) {
             ". Waveforms and platters are drawn that much later, so what you see is what you hear.",
             style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal))
         PillButton("Sync picture to sound…", false, C.a, Modifier.fillMaxWidth().height(40.dp)) { onDismiss(); c.startAlign(picture = true) }
+    }
+}
+
+/** rekordbox playlists, grouped by folder, with how many of each are on this tablet. */
+@Composable
+private fun PlaylistPicker(c: Controller, modifier: Modifier, onImportXml: () -> Unit, onClose: () -> Unit) {
+    val lib = c.rb ?: return
+    val groups = remember(lib) { lib.playlists.groupBy { it.folders.joinToString(" / ") } }
+    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        item {
+            PickRow("All tracks", "${c.rbMatch.size} from ${lib.product}", c.playlist == null) { c.selectPlaylist(null); onClose() }
+        }
+        groups.forEach { (folder, lists) ->
+            if (folder.isNotEmpty()) item { Text("▾  ${folder.uppercase()}", style = T.cap.copy(letterSpacing = 0.6.sp, color = C.fx), modifier = Modifier.padding(top = 8.dp, start = 4.dp)) }
+            items(lists.size) { n ->
+                val pl = lists[n]
+                val on = c.playlistOnTablet(pl)
+                PickRow(pl.name, "$on of ${pl.trackIds.size} on this tablet", c.playlist == pl, indent = folder.isNotEmpty()) { c.selectPlaylist(pl); onClose() }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Import a newer collection.xml…", false, C.a, Modifier.height(32.dp)) { onClose(); onImportXml() }
+                Chip("Remove rekordbox playlists", false, C.bad, Modifier.height(32.dp)) { onClose(); c.removeRekordbox() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PickRow(title: String, sub: String, on: Boolean, indent: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = if (indent) 14.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.fx.copy(alpha = .15f) else C.s1)
+            .border(1.dp, if (on) C.fx.copy(alpha = .7f) else Color.Transparent, RoundedCornerShape(10.dp)).pointerInput2(onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = if (on) C.fx else C.tx), modifier = Modifier.weight(1f), maxLines = 1)
+        Text(sub, style = T.cap.copy(letterSpacing = 0.2.sp))
     }
 }

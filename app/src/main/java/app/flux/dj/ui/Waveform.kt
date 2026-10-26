@@ -253,11 +253,10 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         }
         // beat grid
         if (t.bpm > 0) {
-            val spb = t.spb
-            val k0 = ceil((fStart - t.firstBeat) / spb).toInt()
-            val k1 = floor((fStart + w * fpp - t.firstBeat) / spb).toInt()
+            val k0 = ceil(t.beatIndex(fStart)).toInt()
+            val k1 = floor(t.beatIndex(fStart + w * fpp)).toInt()
             for (k in k0..k1) {
-                val x = ((t.firstBeat + k * spb - fStart) / fpp).toFloat()
+                val x = ((t.beatPos(k.toDouble()) - fStart) / fpp).toFloat()
                 val bar = Math.floorMod(k, 4) == 0
                 drawLine(Color.White.copy(alpha = if (bar) 0.35f else 0.12f), Offset(x, if (bar) 0f else h * 0.78f), Offset(x, h), if (bar) 2f else 1f)
             }
@@ -270,11 +269,10 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         drawRect(Color(0x99090A0F), Offset.Zero, Size(w / 2, h))
         // grid edit: draw the grid on top of the waveform so it can be lined up with the kicks
         if (editGrid) {
-            val spb = t.spb
-            val k0 = ceil((fStart - t.firstBeat) / spb).toInt()
-            val k1 = floor((fStart + w * fpp - t.firstBeat) / spb).toInt()
+            val k0 = ceil(t.beatIndex(fStart)).toInt()
+            val k1 = floor(t.beatIndex(fStart + w * fpp)).toInt()
             for (k in k0..k1) {
-                val x = ((t.firstBeat + k * spb - fStart) / fpp).toFloat()
+                val x = ((t.beatPos(k.toDouble()) - fStart) / fpp).toFloat()
                 val bar = Math.floorMod(k, 4) == 0
                 drawLine(if (bar) C.fx else Color.White.copy(alpha = 0.8f), Offset(x, 0f), Offset(x, h), if (bar) 3f else 2f)
                 if (bar) drawPath(androidx.compose.ui.graphics.Path().apply { moveTo(x - 6f, 0f); lineTo(x + 6f, 0f); lineTo(x, 9f); close() }, C.fx)

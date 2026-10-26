@@ -55,21 +55,26 @@ class Deck(val index: Int) {
     private var grainMode = false
 
     // ------------------------------------------------------------- helpers (UI thread)
-    val bpm: Float get() = track?.bpm ?: 0f
+    /** Tempo at the playhead (follows tempo maps). */
+    val bpm: Float get() = track?.let { it.bpmAt(pos) } ?: 0f
     val currentBpm: Float get() = bpm * effRatio.toFloat()
-    private fun spb(): Double { val t = track; return if (t != null && t.bpm > 0) t.spb else SR * 0.5 }
-    private fun fb(): Double = track?.firstBeat ?: 0.0
+    fun spbHere(): Double { val t = track; return if (t != null && t.bpm > 0) t.spbAt(pos) else SR * 0.5 }
     fun snapBeat(p: Double): Double {
         val t = track ?: return p
         if (t.bpm <= 0) return p
-        val s = spb()
-        return max(0.0, fb() + Math.round((p - fb()) / s) * s)
+        return max(0.0, t.beatPos(Math.round(t.beatIndex(p)).toDouble()))
     }
     fun phase(p: Double = pos): Double {
         val t = track ?: return 0.0
         if (t.bpm <= 0) return 0.0
-        val x = (p - fb()) / spb()
+        val x = t.beatIndex(p)
         return x - floor(x)
+    }
+    /** Position [beats] beats away from [p], following the tempo map. */
+    fun beatsFrom(p: Double, beats: Double): Double {
+        val t = track ?: return p
+        if (t.bpm <= 0) return p + beats * SR * 0.5
+        return t.beatPos(t.beatIndex(p) + beats)
     }
 
     fun load(t: Track) {
@@ -121,13 +126,13 @@ class Deck(val index: Int) {
     fun hotCueUp(i: Int) { if (previewing) { previewing = false; playing = false; seekReq = previewReturn } }
     fun hotCueClear(i: Int) { hotCues[i] = -1.0; hotCueRev++ }
 
-    fun beatJump(beats: Float) { seek(pos + beats * spb()) }
+    fun beatJump(beats: Float) { seek(beatsFrom(pos, beats.toDouble())) }
 
     fun loopSet(beats: Float) {
         if (track == null) return
         loopBeats = beats
-        val s = if (quantize && bpm > 0) snapBeat(pos).let { if (it > pos + spb() * 0.5) it - spb() else it } else pos
-        loopIn = s; loopOut = s + beats * spb()
+        val s = if (quantize && bpm > 0) snapBeat(pos).let { if (it > pos + spbHere() * 0.5) beatsFrom(it, -1.0) else it } else pos
+        loopIn = s; loopOut = beatsFrom(s, beats.toDouble())
         loopOn = true
     }
     fun loopToggle() { if (loopOn) loopOn = false else loopSet(loopBeats) }
@@ -135,7 +140,7 @@ class Deck(val index: Int) {
     fun loopScale(f: Float) {
         val nb = (loopBeats * f).coerceIn(0.125f, 64f)
         loopBeats = nb
-        if (loopOn) loopOut = loopIn + nb * spb()
+        if (loopOn) loopOut = beatsFrom(loopIn, nb.toDouble())
     }
     fun rollStart(beats: Float) {
         slipActive = true; slipPos = pos

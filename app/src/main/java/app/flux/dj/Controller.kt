@@ -26,6 +26,10 @@ class LibItem(
     var energy: Int = 0, var pattern: String = "", var vibe: String = "",
     /** When it entered the library (epoch ms) — for "Newest" sorting. */
     var added: Long = 0,
+    /** File name without extension (for matching rekordbox / other libraries). */
+    var fileStem: String = "",
+    /** Grid/key/cues come from a rekordbox import. */
+    var fromRb: Boolean = false,
 )
 
 /** One played track in the set history. */
@@ -253,7 +257,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 val cs = List(8) { d.hotCues[it] >= 0 }
                 if (cs != u.cues) u.cues = cs
                 if (t.bpm > 0) {
-                    val bi = Math.floor((vp - t.firstBeat) / t.spb).toLong()
+                    val bi = Math.floor(t.beatIndex(vp)).toLong()
                     if (bi >= 0) {
                         val bar = bi / 4 + 1
                         u.beat = (bi % 4).toInt() + 1
@@ -521,20 +525,20 @@ class Controller(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val out = ArrayList<LibItem>()
             try {
-                val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED)
+                val proj = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.DISPLAY_NAME)
                 ctx.contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj,
                     "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} > 30000", null,
                     "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { c ->
                     while (c.moveToNext() && out.size < 5000) {
                         val id = c.getLong(0)
                         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                        val it = LibItem("ms:$id", c.getString(1) ?: "Unknown", c.getString(2)?.takeIf { a -> a != "<unknown>" } ?: "", c.getLong(3), uri, -1, added = c.getLong(4) * 1000)
+                        val it = LibItem("ms:$id", c.getString(1) ?: "Unknown", c.getString(2)?.takeIf { a -> a != "<unknown>" } ?: "", c.getLong(3), uri, -1, added = c.getLong(4) * 1000, fileStem = (c.getString(5) ?: "").substringBeforeLast('.'))
                         applyMeta(it)
                         out.add(it)
                     }
                 }
             } catch (_: Exception) {}
-            withContext(Dispatchers.Main) { deviceTracks = out; libRev++; startIndexing() }
+            withContext(Dispatchers.Main) { deviceTracks = out; libRev++; rbRematch(); startIndexing() }
         }
     }
 
@@ -656,6 +660,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
         if (!track.analyzed) {
             Analyzer.rhythmAndKey(track); Analyzer.profile(track)
             saveMeta(track.id, track, true)
+        } else if (track.energy == 0 && protectedMeta(metaParts(track.id))) {
+            Analyzer.profile(track); saveProfileOnly(track.id, track)
         }
         withContext(Dispatchers.Main) {
             item.bpm = track.bpm; item.key = track.key; item.energy = track.energy; item.pattern = track.pattern; item.vibe = track.vibe; libRev++
@@ -689,6 +695,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             if (metaCurrent(p) && (p[2].toDoubleOrNull() ?: -1.0) >= 0) {
                 t.bpm = p[0].toFloat(); t.key = p[1].toInt(); t.firstBeat = p[2].toDouble(); t.analyzed = true
                 t.energy = p[3].toIntOrNull() ?: 0; t.pattern = p[4]; t.vibe = p[5]
+                cache.getString("tmap:${t.id}", null)?.let { m -> t.applyTempoMapString(m) }
             }
         }
     }
@@ -888,12 +895,29 @@ class Controller(app: Application) : AndroidViewModel(app) {
     /** Analysis format version; "u" marks a grid the user edited by hand (never re-analysed). */
     private val metaVersion = "2"
 
-    private fun saveMeta(id: String, t: Track, fbValid: Boolean, user: Boolean = false) {
-        cache.edit().putString(id, "${t.bpm}|${t.key}|${if (fbValid) t.firstBeat else -1.0}|${t.energy}|${t.pattern}|${t.vibe}|${if (user) "u" else metaVersion}").apply()
+    /**
+     * Field 7 is the source: "2" = FLUX analysis, "u:<time>" = edited by hand in FLUX, "rb:<time>" = rekordbox import.
+     * Hand edits and rekordbox data are never overwritten by automatic analysis.
+     */
+    private fun saveMeta(id: String, t: Track, fbValid: Boolean, user: Boolean = false, source: String? = null) {
+        val src = source ?: if (user) "u:${System.currentTimeMillis()}" else metaVersion
+        val ed = cache.edit().putString(id, "${t.bpm}|${t.key}|${if (fbValid) t.firstBeat else -1.0}|${t.energy}|${t.pattern}|${t.vibe}|$src")
+        val map = t.tempoMapString()
+        if (map != null) ed.putString("tmap:$id", map) else if (user || source != null) ed.remove("tmap:$id")
+        ed.apply()
+    }
+
+    /** true when the grid/key came from a hand edit or rekordbox (never replace it with automatic analysis). */
+    private fun protectedMeta(p: List<String>?): Boolean = p?.getOrNull(6)?.let { it.startsWith("u") || it.startsWith("rb") } == true
+
+    /** Keep the protected grid/key/map, update only the automatic fields (energy, pattern, vibe). */
+    private fun saveProfileOnly(id: String, t: Track) {
+        val p = metaParts(id) ?: return
+        cache.edit().putString(id, listOf(p[0], p[1], p[2], "${t.energy}", t.pattern, t.vibe, p[6]).joinToString("|")).apply()
     }
 
     private fun metaParts(id: String): List<String>? = cache.getString(id, null)?.split("|")
-    private fun metaCurrent(p: List<String>?): Boolean = p != null && p.size >= 7 && (p[6] == metaVersion || p[6] == "u")
+    private fun metaCurrent(p: List<String>?): Boolean = p != null && p.size >= 7 && (p[6] == metaVersion || protectedMeta(p))
 
     private fun applyMeta(it: LibItem): Boolean {
         val p = cache.getString(it.id, null)?.split("|") ?: return false
@@ -932,6 +956,15 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val t = Decoder.decode(ctx, it.uri!!, it.id, it.title, it.artist)
         if (t == null) { it.energy = -1; cache.edit().putString(it.id, "0|-1|-1.0|-1|-|-").apply(); return }
         Analyzer.waveform(t); saveWave(t, t.gain)
+        val prot = metaParts(it.id)?.takeIf { p -> protectedMeta(p) }
+        if (prot != null) {
+            // rekordbox / hand-edited grid and key stay; only the profile is filled in
+            t.bpm = prot[0].toFloat(); t.key = prot[1].toInt()
+            Analyzer.profile(t)
+            it.energy = t.energy; it.pattern = t.pattern; it.vibe = t.vibe
+            saveProfileOnly(it.id, t)
+            return
+        }
         Analyzer.rhythmAndKey(t); Analyzer.profile(t)
         it.bpm = t.bpm; it.key = t.key; it.energy = t.energy; it.pattern = t.pattern; it.vibe = t.vibe
         saveMeta(it.id, t, true)
@@ -939,6 +972,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     private fun rebeat(it: LibItem) {
         val p = metaParts(it.id) ?: return
+        if (protectedMeta(p)) return
         val t = Track(it.id, it.title, it.artist, ShortArray(4))
         if (!loadWave(t)) return
         Analyzer.rebeat(t)
@@ -1037,7 +1071,12 @@ class Controller(app: Application) : AndroidViewModel(app) {
     /** Filtered + sorted list for the library panel. */
     fun filteredLibrary(target: Int, query: String): List<LibItem> {
         val ref = refMeta(target)
-        val base = if (showHidden) allItems().filter { it.id in hidden } else visibleItems()
+        val pl = playlist
+        val base = when {
+            showHidden -> allItems().filter { it.id in hidden }
+            pl != null -> { val byId = visibleItems().associateBy { it.id }; pl.trackIds.mapNotNull { rbMatch[it] }.mapNotNull { byId[it] } }
+            else -> visibleItems()
+        }
         var list = base.filter { query.isBlank() || it.title.contains(query, true) || it.artist.contains(query, true) }
         if (filterVibe != null) list = list.filter { it.vibe == filterVibe }
         if (filterEnergy != 0) list = list.filter { when (filterEnergy) { 1 -> it.energy in 1..3; 2 -> it.energy in 4..7; else -> it.energy >= 8 } }
@@ -1046,6 +1085,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             if (filterKey == 1) list = list.filter { Keys.distance(it.key, ref.key) in 0..2 }
         }
         return when (sortMode) {
+            7 -> list                                   // playlist order
             1 -> list.sortedByDescending { it.added }
             2 -> list.sortedBy { it.title.lowercase() }
             3 -> list.sortedWith(compareBy({ it.artist.ifEmpty { "\uFFFF" }.lowercase() }, { it.title.lowercase() }))
@@ -1068,7 +1108,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val lines = (sp.getString("imports", "") ?: "").split("\n").filter { it.contains("\t") }
         imported = lines.map { l ->
             val p = l.split("\t", limit = 3)
-            LibItem("imp:${p[0]}", p[1], "", 0, Uri.parse(p[0]), -1, added = p.getOrNull(2)?.toLongOrNull() ?: 0).also { applyMeta(it) }
+            LibItem("imp:${p[0]}", p[1], "", 0, Uri.parse(p[0]), -1, added = p.getOrNull(2)?.toLongOrNull() ?: 0, fileStem = p[1]).also { applyMeta(it) }
         }
     }
 
@@ -1084,9 +1124,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     fun addFiles(uris: List<Uri>) {
         val have = imported.map { it.uri.toString() }.toSet()
-        val fresh = uris.filter { it.toString() !in have }.map { LibItem("imp:$it", displayName(it), "", 0, it, -1, added = System.currentTimeMillis()).also { i -> applyMeta(i) } }
+        val fresh = uris.filter { it.toString() !in have }.map { displayName(it).let { n -> LibItem("imp:$it", n, "", 0, it, -1, added = System.currentTimeMillis(), fileStem = n) }.also { i -> applyMeta(i) } }
         if (fresh.isEmpty()) { toast = "Already in your library"; return }
-        imported = imported + fresh; saveImports(); libRev++; startIndexing()
+        imported = imported + fresh; saveImports(); libRev++; rbRematch(); startIndexing()
         toast = "Added ${fresh.size} track${if (fresh.size > 1) "s" else ""} · analysing in the background"
     }
 
@@ -1109,14 +1149,123 @@ class Controller(app: Application) : AndroidViewModel(app) {
             walk(android.provider.DocumentsContract.getTreeDocumentId(tree))
             withContext(Dispatchers.Main) {
                 val have = imported.map { it.uri.toString() }.toSet()
-                val fresh = found.filter { it.first.toString() !in have }.map { (u, n) -> LibItem("imp:$u", n, "", 0, u, -1, added = System.currentTimeMillis()).also { i -> applyMeta(i) } }
+                val fresh = found.filter { it.first.toString() !in have }.map { (u, n) -> LibItem("imp:$u", n, "", 0, u, -1, added = System.currentTimeMillis(), fileStem = n).also { i -> applyMeta(i) } }
                 if (found.isEmpty()) toast = "No audio files found in that folder"
-                else { imported = imported + fresh; saveImports(); libRev++; startIndexing(); toast = "Added ${fresh.size} tracks from folder · analysing…" }
+                else { imported = imported + fresh; saveImports(); libRev++; rbRematch(); startIndexing(); toast = "Added ${fresh.size} tracks from folder · analysing…" }
             }
         }
     }
 
     fun deckName(i: Int) = if (i == 0) "A" else "B"
+
+    // ------------------------------------------------------------------ rekordbox XML
+    var rb by mutableStateOf<RbLibrary?>(null)
+    /** rekordbox TrackID → FLUX library id */
+    var rbMatch by mutableStateOf<Map<String, String>>(emptyMap())
+    var playlist by mutableStateOf<RbPlaylist?>(null)
+    var rbReport by mutableStateOf<RbReport?>(null)
+    private val rbFile by lazy { java.io.File(ctx.filesDir, "rekordbox.xml") }
+    private var rbImportTime: Long = sp.getLong("rb_import_time", 0L)
+
+    class RbReport(val total: Int, val matched: Int, val playlists: Int, val variable: Int, val hotCues: Int, val missing: List<String>)
+
+    fun selectPlaylist(p: RbPlaylist?) { playlist = p; sortMode = if (p != null) 7 else 0; libRev++ }
+    fun playlistOnTablet(p: RbPlaylist): Int = p.trackIds.count { rbMatch[it]?.let { id -> id !in hidden } == true }
+
+    private fun loadRekordbox() {
+        if (!rbFile.exists()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val lib = try { rbFile.inputStream().use { Rekordbox.parse(it) } } catch (_: Exception) { null }
+            withContext(Dispatchers.Main) { rb = lib; rbRematch() }
+        }
+    }
+
+    /** Called when the user picks a collection.xml: keep a copy, match, and apply everything. */
+    fun importRekordbox(uri: Uri) {
+        toast = "Reading rekordbox collection…"
+        viewModelScope.launch(Dispatchers.IO) {
+            val lib = try {
+                ctx.contentResolver.openInputStream(uri)!!.use { inp -> rbFile.outputStream().use { inp.copyTo(it) } }
+                rbFile.inputStream().use { Rekordbox.parse(it) }
+            } catch (e: Exception) { null }
+            withContext(Dispatchers.Main) {
+                if (lib == null || lib.tracks.isEmpty()) { toast = "That doesn't look like a rekordbox collection.xml"; return@withContext }
+                rbImportTime = System.currentTimeMillis(); sp.edit().putLong("rb_import_time", rbImportTime).apply()
+                rb = lib
+                rbRematch()
+                val missing = lib.tracks.values.filter { it.id !in rbMatch }.map { t -> if (t.artist.isNotEmpty()) "${t.artist} – ${t.name}" else t.name }
+                rbReport = RbReport(lib.tracks.size, rbMatch.size, lib.playlists.size,
+                    lib.tracks.values.count { t -> t.id in rbMatch && t.tempoBpms.toSet().size > 1 },
+                    lib.tracks.values.filter { it.id in rbMatch }.sumOf { it.hotCues.size }, missing)
+            }
+        }
+    }
+
+    fun removeRekordbox() {
+        rbFile.delete(); rb = null; rbMatch = emptyMap(); playlist = null
+        allItems().forEach { it.fromRb = false }
+        libRev++; toast = "rekordbox playlists removed (grids and cues already imported stay)"
+    }
+
+    /** Match the collection against the library and apply rekordbox data to newly matched tracks. */
+    fun rbRematch() {
+        val lib = rb ?: return
+        val items = (imported + deviceTracks)
+        val cands = items.map { Rekordbox.Candidate(it.id, it.title, it.artist, (it.durMs / 1000).toInt(), it.fileStem) }
+        val m = Rekordbox.match(lib, cands)
+        rbMatch = m
+        val byId = items.associateBy { it.id }
+        val ed = cache.edit()
+        for ((rbId, libId) in m) {
+            val item = byId[libId] ?: continue
+            item.fromRb = true
+            if (cache.getLong("rbApplied:$libId", 0L) == rbImportTime) { applyMeta(item); continue }
+            applyRb(lib.tracks[rbId]!!, item)
+            ed.putLong("rbApplied:$libId", rbImportTime)
+        }
+        ed.apply()
+        libRev++
+    }
+
+    /** Write rekordbox's grid, key and cues into FLUX's stores (and onto a deck if the track is loaded). */
+    private fun applyRb(r: RbTrack, item: LibItem) {
+        val old = metaParts(item.id)
+        val handEditedLater = old?.getOrNull(6)?.let { it.startsWith("u:") && (it.substringAfter("u:").toLongOrNull() ?: 0L) > rbImportTime } == true
+        val t = Track(item.id, item.title, item.artist, ShortArray(4))
+        if (!handEditedLater && r.tempoSecs.isNotEmpty()) {
+            if (r.tempoSecs.size == 1) {
+                t.bpm = r.tempoBpms[0].toFloat()
+                t.firstBeat = r.tempoSecs[0] * SR - (r.firstBattito - 1).coerceIn(0, 3) * t.spb
+                val bar = t.spb * 4; t.firstBeat = ((t.firstBeat % bar) + bar) % bar
+            } else t.setTempoMap(r.tempoSecs, r.tempoBpms, r.firstBattito)
+            t.key = if (r.key >= 0) r.key else old?.getOrNull(1)?.toIntOrNull() ?: -1
+            t.energy = old?.getOrNull(3)?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+            t.pattern = old?.getOrNull(4)?.takeIf { it != "-" } ?: ""; t.vibe = old?.getOrNull(5)?.takeIf { it != "-" } ?: ""
+            saveMeta(item.id, t, true, source = "rb:$rbImportTime")
+            item.bpm = t.bpm; item.key = t.key
+        } else if (r.key >= 0 && !handEditedLater && old != null) {
+            cache.edit().putString(item.id, old.toMutableList().also { it[1] = "${r.key}" }.joinToString("|")).apply()
+            item.key = r.key
+        }
+        // cues: rekordbox hot cues replace FLUX's (main cue = first memory cue, else beat 1)
+        if (r.hotCues.isNotEmpty() || r.memoryCues.isNotEmpty()) {
+            val main = r.memoryCues.firstOrNull()?.times(SR) ?: (if (t.bpm > 0) t.beatPos(0.0).coerceAtLeast(0.0) else 0.0)
+            val slots = (0 until 8).map { k -> r.hotCues[k]?.times(SR) ?: -1.0 }
+            cache.edit().putString("cues:${item.id}", (listOf(main) + slots).joinToString(",")).apply()
+        }
+        // a loaded deck picks the new grid / cues up right away
+        for (i in 0..1) {
+            val d = engine.decks[i]; val lt = d.track ?: continue
+            if (lt.id != item.id) continue
+            cache.getString(item.id, null)?.split("|")?.let { p ->
+                lt.bpm = p[0].toFloat(); lt.key = p[1].toInt(); lt.firstBeat = p[2].toDouble()
+                val map = cache.getString("tmap:${item.id}", null)
+                if (map != null) lt.applyTempoMapString(map) else lt.clearTempoMap()
+            }
+            restoreCues(i, lt)
+            ui[i].keyText = if (lt.key >= 0) "${lt.camelot} · ${lt.keyName}" else ""
+        }
+    }
 
     /** Tap on a library row: load into the requested deck, or the idle one. */
     fun loadTap(item: LibItem, target: Int) {
@@ -1181,7 +1330,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val d = engine.decks[deck]
         val t = d.track ?: return
         val (s, e, what) = if (d.loopOn) Triple(d.loopIn, d.loopOut, "LOOP")
-            else Triple(d.pos, d.pos + (if (t.bpm > 0) t.spb * 4 else SR * 2.0), if (t.bpm > 0) "BAR" else "2S")
+            else Triple(d.pos, if (t.bpm > 0) d.beatsFrom(d.pos, 4.0) else d.pos + SR * 2.0, if (t.bpm > 0) "BAR" else "2S")
         storeSample(k, SampleBank.fromStereo(t.pcm, s.toInt(), e.toInt(), trim = false), "${deckName(deck)}·$what")
     }
 
@@ -1192,7 +1341,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------------ beat-grid editing
-    private val gridOrig = arrayOfNulls<Pair<Float, Double>>(2)
+    private class GridSnap(val bpm: Float, val firstBeat: Double, val map: String?)
+    private val gridOrig = arrayOfNulls<GridSnap>(2)
     private val gridAnchor = doubleArrayOf(-1.0, -1.0)
     private val taps = arrayOf(ArrayList<Long>(), ArrayList<Long>())
 
@@ -1200,7 +1350,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     fun gridOpen(i: Int) {
         val t = gridTrack(i) ?: return
-        gridOrig[i] = t.bpm to t.firstBeat
+        gridOrig[i] = GridSnap(t.bpm, t.firstBeat, t.tempoMapString())
         gridAnchor[i] = -1.0
         ui[i].gridMode = 0
         taps[i].clear()
@@ -1213,7 +1363,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         ui[i].gridEdit = false
         val t = gridTrack(i) ?: return
         val o = gridOrig[i]
-        if (o == null || o.first != t.bpm || o.second != t.firstBeat) {
+        if (o == null || o.bpm != t.bpm || o.firstBeat != t.firstBeat || o.map != t.tempoMapString()) {
             t.analyzed = true
             saveMeta(t.id, t, true, user = true)
             allItems().firstOrNull { it.id == t.id }?.let { it.bpm = t.bpm }
@@ -1222,11 +1372,14 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun refreshGridText(i: Int) { ui[i].gridBpm = gridTrack(i)?.let { if (it.bpm > 0) String.format("%.2f", it.bpm) else "—" } ?: "" }
+    private fun refreshGridText(i: Int) {
+        ui[i].gridBpm = gridTrack(i)?.let { if (it.bpm <= 0) "—" else if (it.variable) "~" + String.format("%.2f", it.bpmAt(engine.decks[i].pos)) else String.format("%.2f", it.bpm) } ?: ""
+    }
 
     /** Keep firstBeat within one bar so bar numbering stays meaningful. */
     private fun normalize(t: Track) {
         if (t.bpm <= 0) return
+        if (t.variable) return
         val bar = t.spb * 4
         var fb = t.firstBeat % bar
         if (fb < 0) fb += bar
@@ -1236,7 +1389,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun gridShiftFrames(i: Int, frames: Double) {
         val t = gridTrack(i) ?: return
         if (t.bpm <= 0) return
-        t.firstBeat += frames; normalize(t)
+        t.shiftGrid(frames); normalize(t)
     }
 
     fun gridShiftMs(i: Int, ms: Float) = gridShiftFrames(i, ms / 1000.0 * SR)
@@ -1246,17 +1399,25 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val t = gridTrack(i) ?: return
         if (t.bpm <= 0) return
         val p = engine.decks[i].pos
-        t.firstBeat = p; normalize(t)
+        t.setDownbeatAt(p); normalize(t)
         gridAnchor[i] = p   // pin for STRETCH
     }
 
     /** The pinned beat STRETCH pivots around: the last SET 1 HERE, otherwise the track's first beat. */
     fun gridAnchorFrames(i: Int): Double = gridTrack(i)?.let { if (gridAnchor[i] >= 0) gridAnchor[i] else it.firstBeat } ?: 0.0
 
+    /** Tempo edits need one tempo: a tempo map is flattened to the tempo at the playhead first. */
+    private fun flattenForEdit(i: Int, t: Track) {
+        if (!t.variable) return
+        t.flattenAt(engine.decks[i].pos)
+        toast = "This track had changing tempo — the grid is now one tempo (${String.format("%.2f", t.bpm)} BPM). RESET brings the original back."
+    }
+
     /** Stretch: the pinned beat stays put, the beat under the playhead follows the finger (changes BPM). */
     fun gridStretchFrames(i: Int, dx: Double) {
         val t = gridTrack(i) ?: return
         if (t.bpm <= 0) return
+        flattenForEdit(i, t)
         val a = gridAnchorFrames(i)
         val k = Math.round((engine.decks[i].pos - a) / t.spb)
         if (abs(k) < 2) { gridShiftFrames(i, dx); return }   // too close to the pin to stretch meaningfully
@@ -1273,6 +1434,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     /** Change tempo while the beat under the playhead stays where it is. */
     private fun setBpmAnchored(i: Int, bpm: Float) {
         val t = gridTrack(i) ?: return
+        flattenForEdit(i, t)
         val nb = bpm.coerceIn(40f, 250f)
         if (t.bpm <= 0) { t.bpm = nb; t.firstBeat = engine.decks[i].pos; normalize(t); refreshGridText(i); return }
         val pos = engine.decks[i].pos
@@ -1284,9 +1446,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
         refreshGridText(i)
     }
 
-    fun gridBpmDelta(i: Int, d: Float) { val t = gridTrack(i) ?: return; setBpmAnchored(i, ((t.bpm + d) * 100f).roundToInt() / 100f) }
-    fun gridScale(i: Int, f: Float) { val t = gridTrack(i) ?: return; if (t.bpm > 0) setBpmAnchored(i, t.bpm * f) }
-    fun gridRound(i: Int) { val t = gridTrack(i) ?: return; if (t.bpm > 0) setBpmAnchored(i, t.bpm.roundToInt().toFloat()) }
+    fun gridBpmDelta(i: Int, d: Float) { val t = gridTrack(i) ?: return; flattenForEdit(i, t); setBpmAnchored(i, ((t.bpm + d) * 100f).roundToInt() / 100f) }
+    fun gridScale(i: Int, f: Float) { val t = gridTrack(i) ?: return; flattenForEdit(i, t); if (t.bpm > 0) setBpmAnchored(i, t.bpm * f) }
+    fun gridRound(i: Int) { val t = gridTrack(i) ?: return; flattenForEdit(i, t); if (t.bpm > 0) setBpmAnchored(i, t.bpm.roundToInt().toFloat()) }
 
     fun gridTap(i: Int) {
         val now = System.currentTimeMillis()
@@ -1302,7 +1464,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun gridReset(i: Int) {
         val t = gridTrack(i) ?: return
         val o = gridOrig[i] ?: return
-        t.bpm = o.first; t.firstBeat = o.second
+        if (o.map != null) t.applyTempoMapString(o.map) else t.clearTempoMap()
+        t.bpm = o.bpm; t.firstBeat = o.firstBeat
         refreshGridText(i)
     }
 
@@ -1328,6 +1491,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
         loadImports()
         loadHistory()
+        loadRekordbox()
         refreshLibrary()
         viewModelScope.launch(Dispatchers.IO) { loadCustomSamples() }
     }

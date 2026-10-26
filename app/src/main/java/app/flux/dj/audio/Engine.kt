@@ -474,7 +474,7 @@ class Engine(private val ctx: Context) {
                 d.syncRatio = syncTarget(d, l)
                 if (d.needAlign && d.playing && l.playing) {
                     var diff = d.phase() - l.phase(); diff -= Math.round(diff).toDouble()
-                    d.seekReq = d.pos - diff * d.track!!.spb
+                    d.seekReq = d.pos - diff * d.track!!.spbAt(d.pos)
                     d.needAlign = false
                 } else if (d.playing && l.playing && !d.scratching) {
                     var diff = d.phase() - l.phase(); diff -= Math.round(diff).toDouble()
