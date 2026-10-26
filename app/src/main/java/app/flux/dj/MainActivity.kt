@@ -33,6 +33,9 @@ class MainActivity : ComponentActivity() {
     private val samplePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) controller.setSampleFromUri(samplePad, uri)
     }
+    private val xmlPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) controller.importRekordbox(uri)
+    }
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { controller.refreshLibrary() }
     private val btPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { controller.refreshDevices() }
 
@@ -54,6 +57,7 @@ class MainActivity : ComponentActivity() {
                 onAddFiles = { picker.launch(arrayOf("audio/*")) },
                 onAddFolder = { folderPicker.launch(null) },
                 onPickSample = { k -> samplePad = k; samplePicker.launch(arrayOf("audio/*")) },
+                onImportXml = { xmlPicker.launch(arrayOf("text/xml", "application/xml", "*/*")) },
                 onPermission = {
                     permission.launch(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE)
                 },

@@ -38,6 +38,106 @@ class Track(
     @Volatile var ovNorm: Float = 0f
 
     val spb: Double get() = if (bpm > 0) 60.0 / bpm * SR else 0.0
+
+    // ---------------------------------------------------------------- tempo map
+    // A track either has one tempo (bpm + firstBeat) or a tempo map: markers at beat positions, each with
+    // its own tempo until the next one (rekordbox "dynamic" grids). Beat index 0 is always a downbeat.
+    @Volatile private var mPos: DoubleArray? = null     // marker positions (frames)
+    @Volatile private var mSpb: DoubleArray? = null     // frames per beat from each marker on
+    @Volatile private var mBeat: DoubleArray? = null    // beat index at each marker
+    val variable: Boolean get() = mPos != null
+
+    /** Markers as (seconds, bpm) plus the beat-in-bar (1..4) of the first marker. */
+    fun setTempoMap(secs: DoubleArray, bpms: DoubleArray, firstBattito: Int) {
+        if (secs.isEmpty()) { clearTempoMap(); return }
+        // keep markers that are at least one beat apart
+        val ps = ArrayList<Double>(); val ss = ArrayList<Double>(); val bs = ArrayList<Double>()
+        ps.add(secs[0] * SR); ss.add(60.0 / bpms[0] * SR); bs.add(((firstBattito - 1).coerceIn(0, 3)).toDouble())
+        for (i in 1 until secs.size) {
+            val p = secs[i] * SR
+            val beats = Math.round((p - ps.last()) / ss.last())
+            if (beats < 1) continue
+            // fit the previous segment exactly between its two markers, so the map is continuous
+            ss[ss.size - 1] = (p - ps.last()) / beats
+            ps.add(p); ss.add(60.0 / bpms[i] * SR); bs.add(bs.last() + beats)
+        }
+        mPos = ps.toDoubleArray(); mSpb = ss.toDoubleArray(); mBeat = bs.toDoubleArray()
+        // keep the single-tempo fields meaningful (library, sorting, fallbacks)
+        // main tempo = the one the track spends most time in (for library, sorting, suggestions)
+        val time = HashMap<Double, Double>()
+        for (i in secs.indices) time[bpms[i]] = (time[bpms[i]] ?: 0.0) + ((if (i + 1 < secs.size) secs[i + 1] else maxOf(secs[i] + 1, durationSec)) - secs[i])
+        bpm = time.maxByOrNull { it.value }!!.key.toFloat()
+        firstBeat = beatPos(0.0)
+    }
+    fun clearTempoMap() { mPos = null; mSpb = null; mBeat = null }
+
+    /** Move the whole grid (map or single tempo) by [frames]. */
+    fun shiftGrid(frames: Double) {
+        val p = mPos
+        if (p != null) { mPos = DoubleArray(p.size) { p[it] + frames }; firstBeat = beatPos(0.0) } else firstBeat += frames
+    }
+
+    /** Make the beat nearest [p] beat 1 of a bar (tempo maps keep their markers). */
+    fun setDownbeatAt(p: Double) {
+        val b = mBeat ?: run { firstBeat = p; return }
+        val k = Math.round(beatIndex(p))
+        val off = Math.floorMod(k, 4L).toDouble()
+        mBeat = DoubleArray(b.size) { b[it] - off }
+        firstBeat = beatPos(0.0)
+    }
+
+    /** Replace a tempo map by one tempo: the local tempo at [p], keeping the beat there and its bar position. */
+    fun flattenAt(p: Double) {
+        if (mPos == null) return
+        val k = Math.round(beatIndex(p))
+        val s = spbAt(p)
+        val at = beatPos(k.toDouble())
+        bpm = (60.0 * SR / s).toFloat()
+        firstBeat = at - Math.floorMod(k, 4L) * s
+        clearTempoMap()
+    }
+
+    /** Serialised map: "sec:bpm,sec:bpm,…;battito" (null when the track has one tempo). */
+    fun tempoMapString(): String? {
+        val p = mPos ?: return null; val s = mSpb!!; val b = mBeat!!
+        return p.indices.joinToString(",") { "${p[it] / SR}:${60.0 * SR / s[it]}" } + ";" + ((b[0].toInt() % 4) + 1)
+    }
+    fun applyTempoMapString(str: String) {
+        val (list, bat) = str.split(";").let { it[0] to (it.getOrNull(1)?.toIntOrNull() ?: 1) }
+        val pairs = list.split(",").mapNotNull { e -> e.split(":").takeIf { it.size == 2 }?.let { it[0].toDoubleOrNull() to it[1].toDoubleOrNull() } }
+            .filter { it.first != null && it.second != null && it.second!! > 0 }
+        if (pairs.isEmpty()) return
+        setTempoMap(DoubleArray(pairs.size) { pairs[it].first!! }, DoubleArray(pairs.size) { pairs[it].second!! }, bat)
+    }
+
+    private fun segByPos(p: Double, pos: DoubleArray): Int {
+        var lo = 0; var hi = pos.size - 1
+        if (p <= pos[0]) return 0
+        while (lo < hi) { val m = (lo + hi + 1) ushr 1; if (pos[m] <= p) lo = m else hi = m - 1 }
+        return lo
+    }
+
+    /** Fractional beat index at a position (frames). */
+    fun beatIndex(p: Double): Double {
+        val pos = mPos
+        if (pos == null) return if (bpm > 0) (p - firstBeat) / spb else 0.0
+        val i = segByPos(p, pos)
+        return mBeat!![i] + (p - pos[i]) / mSpb!![i]
+    }
+
+    /** Position (frames) of a (fractional) beat index. */
+    fun beatPos(b: Double): Double {
+        val pos = mPos
+        if (pos == null) return firstBeat + b * spb
+        val beat = mBeat!!
+        var lo = 0; var hi = beat.size - 1
+        if (b > beat[0]) while (lo < hi) { val m = (lo + hi + 1) ushr 1; if (beat[m] <= b) lo = m else hi = m - 1 }
+        return pos[lo] + (b - beat[lo]) * mSpb!![lo]
+    }
+
+    /** Frames per beat at a position. */
+    fun spbAt(p: Double): Double { val pos = mPos ?: return spb; return mSpb!![segByPos(p, pos)] }
+    fun bpmAt(p: Double): Float = if (bpm <= 0) 0f else (60.0 * SR / spbAt(p)).toFloat()
     val keyName: String get() = Keys.name(key)
     val camelot: String get() = Keys.camelot(key)
 }
