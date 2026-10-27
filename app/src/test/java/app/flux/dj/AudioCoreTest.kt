@@ -101,3 +101,26 @@ class FractionalBpmTest {
         assertTrue("drift ${err * 1000} ms", err < 0.02)
     }
 }
+
+class TransportTest {
+    @Test fun cueInsideLoopRestartsLoop() {
+        val t = DemoTracks.build(DemoTracks.specs[0])
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.render(BLOCK, l, r); d.play(); repeat(200) { d.render(BLOCK, l, r) }
+        d.loopSet(4f); repeat(50) { d.render(BLOCK, l, r) }
+        d.cueDown(); d.render(BLOCK, l, r)
+        assertTrue("still playing", d.playing)
+        assertEquals(d.loopIn, d.pos, 600.0)
+    }
+
+    @Test fun jumpOutOfLoopReleasesIt() {
+        val t = DemoTracks.build(DemoTracks.specs[0])
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.render(BLOCK, l, r); d.play(); d.loopSet(4f)
+        d.jumpTo(d.loopOut + SR * 10.0); d.render(BLOCK, l, r)
+        assertFalse(d.loopOn)
+        assertTrue(d.pos > d.loopOut)
+    }
+}

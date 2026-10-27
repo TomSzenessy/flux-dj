@@ -162,7 +162,9 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         modifier.pointerInput(i) {
             // one finger: grab & scrub the record; two fingers: pinch to zoom (both decks)
             awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val t0 = System.currentTimeMillis()
+                var multi = false
                 var mode = 0 // 0 undecided, 1 scrub, 2 pinch
                 var tot = 0f; var p0 = 0.0
                 var dist0 = 1f; var z0 = c.zoomSec
@@ -172,6 +174,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                     val pressed = ev.changes.filter { it.pressed }
                     if (pressed.isEmpty()) break
                     if (pressed.size >= 2) {
+                        multi = true
                         val dd = (pressed[0].position - pressed[1].position).getDistance().coerceAtLeast(1f)
                         if (mode == 1) d.scratchEnd()
                         if (mode == 4) d.searching = false
@@ -200,6 +203,12 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                 }
                 if (mode == 1) d.scratchEnd()
                 if (mode == 4) d.searching = false
+                // a plain tap jumps to the spot you tapped (snapped to the beat with SNAP on)
+                if (mode == 0 && !multi && !u.gridEdit && d.track != null && System.currentTimeMillis() - t0 < 400) {
+                    val fpp = c.zoomSec * SR * d.effRatio / size.width
+                    val target = c.vpos(i) + (down.position.x - size.width / 2f) * fpp
+                    d.jumpTo(if (d.quantize) d.snapBeat(target) else target)
+                }
             }
         }
     ) {
@@ -323,8 +332,8 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
         modifier.background(Color(0xFF0A0B10)).pointerInput(i) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                d.seekFrac(down.position.x / size.width)
-                drag(down.id) { ch -> d.seekFrac(ch.position.x / size.width); ch.consume() }
+                d.jumpTo(down.position.x / size.width * (d.track?.frames ?: 0).toDouble())
+                drag(down.id) { ch -> d.jumpTo(ch.position.x.coerceIn(0f, size.width.toFloat()) / size.width * (d.track?.frames ?: 0).toDouble()); ch.consume() }
             }
         }
     ) {
