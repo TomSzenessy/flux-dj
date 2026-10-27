@@ -92,6 +92,11 @@ class Deck(val index: Int) {
     fun toStart() { val t = track ?: return; seekReq = 0.0; loopOn = false; if (!playing) cue = t.firstBeat }
 
     fun seek(p: Double) { seekReq = p.coerceIn(0.0, (track?.frames ?: 1).toDouble() - 2) }
+    /** Jump the playhead (tap on a waveform). Leaving an active loop switches the loop off. */
+    fun jumpTo(p: Double) {
+        if (loopOn && (p < loopIn || p >= loopOut)) loopOn = false
+        seek(p)
+    }
     fun seekFrac(f: Float) { val t = track ?: return; seek(f.coerceIn(0f, 1f) * t.frames.toDouble()) }
 
     fun play() {
@@ -105,7 +110,9 @@ class Deck(val index: Int) {
 
     fun cueDown() {
         if (track == null) return
-        if (playing && !previewing) {
+        if (playing && !previewing && loopOn) {
+            seekReq = loopIn                 // inside a loop: CUE restarts the loop and keeps playing
+        } else if (playing && !previewing) {
             playing = false; seekReq = cue
         } else if (!playing) {
             if (abs(pos - cue) > 400) { cue = if (quantize) snapBeat(pos) else pos; seekReq = cue }
