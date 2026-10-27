@@ -35,18 +35,20 @@ adb -s a6103e95 install -r app/build/outputs/apk/debug/app-debug.apk
 | `audio/Analyzer.kt` | 3-band waveform, BPM (refined to 0.01 over the whole track), beat phase, key (Krumhansl), energy / pattern / vibe. |
 | `audio/Dsp.kt`, `audio/Synth.kt` | Biquads, FX, reverb; demo tracks and sampler one-shots (`SampleBank`). |
 | `Rekordbox.kt` | `collection.xml` parser (tracks, TEMPO markers, keys, hot and memory cues, playlist tree) and matcher (file name → title+artist+length → "Artist - Title" → containment with equal length). |
+| `Cloud.kt` | Plex/Plexamp client (PIN sign-in, server discovery, music sections, tracks, stream URLs) using only `HttpURLConnection` + `org.json`/XML. Google Drive uses the Storage Access Framework in `Controller`. |
+| `audio/MicAlign.kt` | Microphone alignment: records the calibration loop, finds the 1568 Hz "ding" and measures the real acoustic delay of one output at a time. |
 | `Controller.kt` | ViewModel holding all UI state and app logic: library (MediaStore, imports, folders, demos), indexing, caches, suggestions/sorting/filters, removal, rekordbox apply, grid editor, history, preview, outputs, samples. **Large (1500 lines); the first candidate to split.** |
 | `ui/*` | Compose UI: `MainScreen` (layout and dialogs), `DeckPanel`, `MixerPanel`, `Waveform` (scrolling waveform, overview, grid-edit bar), `Jog`, `Panels` (library, FX, outputs, view, history, playlist picker), `Align` (align-by-ear screens), `Controls` (knob, faders, pads). |
 
 ## Persistence (on the tablet)
 
-- `shared_prefs/flux.xml`: UI and settings, output devices (by stable `type|address` key), imports list, hidden tracks, last-loaded tracks, sample names, `rb_import_time`.
+- `shared_prefs/flux.xml`: UI and settings, output devices (by stable `type|address` key), imports list, hidden tracks, last-loaded tracks, sample names, `rb_import_time`, Plex client ID/token/server, Plex filter (`plex_collection_only`), connected cloud-folder URI, `acoustic_master_ms` + `acoustic_key` (the rig a mic measurement belongs to).
 - `shared_prefs/flux_analysis.xml`, per track id (`ms:<mediastore id>`, `imp:<uri>`):
   - `<id>` = `bpm|key|firstBeat|energy|pattern|vibe|source`, where source is `2` (FLUX analysis), `u:<ms>` (hand edit) or `rb:<ms>` (rekordbox). `u` and `rb` are **protected**: the indexer and re-analysis never overwrite them, and a hand edit newer than the rekordbox import wins.
   - `tmap:<id>`: tempo map `sec:bpm,…;battito`.
   - `cues:<id>`: `main,hc0..hc7` in frames (-1 = empty).
   - `rbApplied:<id>`: which import was applied.
-- `files/wave/*.bin`: cached waveforms. `cache/pcm/*.pcm`: LRU cache of decoded audio (1.5 GB cap).
+- `files/wave/*.bin`: cached waveforms. `cache/pcm/*.pcm`: LRU cache of decoded audio (1.5 GB cap). `files/plex.tsv`: last synced Plex track list (streams again with the saved token when restarted).
 - `files/rekordbox.xml`: copy of the last imported collection. `files/history.tsv`: set history. `files/samples/pad*.pcm`: custom pads.
 
 ## Current state (verified on the tablet unless noted)
@@ -62,9 +64,9 @@ adb -s a6103e95 install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Known gaps and next steps
 
-1. **Install the latest build** (`f7cb519` + this commit) and check the playlist picker, a tempo-map track (e.g. *Axel F*, 387 markers), tap-to-jump and CUE in a loop.
-2. **Plex connector** (agreed next feature): plex.tv PIN sign-in, library sections, playlists and collections, stream original files through the existing decode/cache path, two-way playlist sync.
-3. **Analysis sync across devices**: a sync file in a user-chosen folder (Drive, Nextcloud, Syncthing), or write rekordbox XML back out so edits round-trip to rekordbox.
+1. **Install the latest build** and check the loop pads, the merged Timing panel, Plex sign-in/linking and a Drive folder with `collection.xml`.
+2. **Cloud sources** (new): Plex/Plexamp PIN sign-in with auto-refreshing codes, server discovery (probes dead Docker/relay addresses), music sections and HTTP streaming; Google Drive/cloud folder via SAF with automatic `collection.xml` import. Plex music can be limited to collection matches; audiobook/spoken-word sections are skipped. Plex/Drive tracks are analysed lazily on first play. Remaining: Plex playlists/collections, Plex library-section picker.
+3. **Analysis sync across devices**: collection.xml in Drive is now authoritative and local analysis skips covered tracks; next is writing FLUX grid edits back out so they round-trip to rekordbox.
 4. rekordbox details not imported yet: hot-cue colours and names, saved loops (`Type=4`), ratings, colours, comments.
 5. Grid editor on tempo-map tracks: tempo edits flatten the map to the tempo at the playhead (RESET restores it). Per-segment editing doesn't exist yet.
 6. Split `Controller.kt` (library, rekordbox, grid, outputs) before it grows further.

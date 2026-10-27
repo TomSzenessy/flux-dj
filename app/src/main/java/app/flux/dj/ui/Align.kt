@@ -46,41 +46,84 @@ private const val WINDOW_MS = 4000f        // lanes show four beats (one per sec
  */
 @Composable
 fun AlignScreen(c: Controller) {
-    val picture = c.alignPicture
-    Box(Modifier.fillMaxSize().background(Color(0xEE05060A)).pointerInput2 { }, contentAlignment = Alignment.Center) {
+    var lane by remember { mutableStateOf(if (c.outMode == OutMode.SINGLE) 1 else 0) }
+    val showPicture = lane == 1 || c.outMode == OutMode.SINGLE
+    Box(Modifier.fillMaxSize().background(Color(0xEE05060A)).pointerInput2 { c.cancelAlign() }, contentAlignment = Alignment.Center) {
         Column(
-            Modifier.widthIn(max = 900.dp).fillMaxWidth(0.85f).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            Modifier.widthIn(max = 900.dp).fillMaxWidth(0.85f).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).pointerInput2 { }.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(if (picture) "Sync picture to sound" else "Line up the beats", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))
-            Text(
-                if (picture) "You hear one beat per second — a high “ding” on beat 1. Drag the lane until each marker crosses the white line exactly when you hear it."
-                else "Both outputs play one beat per second — a high “ding” on beat 1. Drag the lower lane until the beats from both devices land together.",
-                style = T.tab.copy(color = C.mu, fontSize = 13.sp)
-            )
-            if (picture) PictureLane(c, Modifier.fillMaxWidth().height(170.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(170.dp))
-            val value = if (picture) c.visualTrimMs else c.offsetMs
+            Text("Timing & alignment", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))
+            Text("The room, the headphones and the picture are all outputs with a delay. FLUX can measure them with the mic and hold everything back to match — or you can nudge each one by ear.", style = T.tab.copy(color = C.mu, fontSize = 13.sp))
+
+            AutoAlignCard(c)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (c.outMode != OutMode.SINGLE) Chip("Headphones ↔ room", lane == 0, C.fx, Modifier.height(30.dp)) { lane = 0 }
+                Chip("Picture ↔ sound", showPicture && c.outMode == OutMode.SINGLE || lane == 1, C.fx, Modifier.height(30.dp)) { lane = 1 }
+            }
+            if (showPicture) PictureLane(c, Modifier.fillMaxWidth().height(150.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(150.dp))
+            val value = if (showPicture) c.visualTrimMs else c.offsetMs
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (picture) "Output delay ${c.latencyMs} ms" + (if (value != 0) "  ·  fine-tune ${if (value > 0) "+" else ""}$value ms" else "")
+                    if (showPicture) "Picture held back ${c.latencyMs} ms" + (if (value != 0) "  ·  fine-tune ${if (value > 0) "+" else ""}$value ms" else "")
                     else when {
                         value == 0 -> "In sync (no delay)"
-                        value > 0 -> "Headphones were behind → master waits $value ms"
+                        value > 0 -> "Headphones were behind → room waits $value ms"
                         else -> "Headphones were ahead → cue waits ${-value} ms"
                     },
                     style = T.num.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
                 )
                 for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(36.dp).width(52.dp)) {
-                    if (picture) c.setVisualTrim(value + d) else c.setOffset((value + d).coerceIn(-RANGE_MS, RANGE_MS))
+                    if (showPicture) c.setVisualTrim(value + d) else c.setOffset((value + d).coerceIn(-RANGE_MS, RANGE_MS))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Reset", false, C.mu, Modifier.weight(1f).height(46.dp)) { if (picture) c.setVisualTrim(0) else c.setOffset(0) }
+                PillButton("Cancel", false, C.mu, Modifier.weight(1f).height(46.dp)) { c.cancelAlign() }
+                PillButton("Reset", false, C.mu, Modifier.weight(1f).height(46.dp)) { if (showPicture) c.setVisualTrim(0) else c.setOffset(0) }
                 PillButton("Done", true, C.fx, Modifier.weight(2f).height(46.dp), solid = true) { c.stopAlign() }
             }
         }
     }
 }
+
+@Composable
+private fun AutoAlignCard(c: Controller) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s2).border(1.dp, C.ok.copy(alpha = .35f), RoundedCornerShape(14.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("AUTOMATIC · MICROPHONE", style = T.cap.copy(color = C.ok, fontSize = 9.sp, letterSpacing = 0.8.sp), modifier = Modifier.weight(1f))
+            if (c.autoStep == 5) Chip("Redo", false, C.ok, Modifier.height(26.dp)) { c.beginAutoAlign() }
+        }
+        when (c.autoStep) {
+            0 -> {
+                Text("Put the mic next to the room output, then next to the headphones. FLUX measures each delay, aligns them, and holds the picture/grid back to the latest one. Close the sheet to keep the current timing.", style = T.tab.copy(color = C.mu, fontSize = 12.sp))
+                PillButton("⚡  Auto-align everything", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.beginAutoAlign() }
+                Chip("Measure current output only", false, C.mu, Modifier.height(28.dp)) { c.measureMaster() }
+            }
+            1 -> {
+                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
+                PillButton("Measure speaker", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureMaster() }
+                if (!c.micGranted) Text("Microphone access will be requested.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+            }
+            2, 4 -> {
+                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.s4)) {
+                    Box(Modifier.fillMaxWidth(c.autoProgress.coerceIn(0f, 1f)).fillMaxHeight().background(C.ok))
+                }
+            }
+            3 -> {
+                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
+                PillButton("Measure headphones", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureCue() }
+                Chip("Use room only", false, C.mu, Modifier.height(28.dp)) { c.finishMasterOnly() }
+            }
+            5 -> Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp, color = C.ok))
+        }
+    }
+}
+
 
 private val numPaint = android.graphics.Paint().apply { isAntiAlias = true; textSize = 30f; isFakeBoldText = true; textAlign = android.graphics.Paint.Align.CENTER }
 
@@ -146,7 +189,7 @@ private fun PictureLane(c: Controller, modifier: Modifier) {
             val laneH = h * 0.6f; val y = h * 0.2f
             drawRoundRect(C.a.copy(alpha = 0.07f), Offset(8f, y), Size(w - 16f, laneH), CornerRadius(10f))
             // what you see = engine position minus the output delay (+ your fine-tune)
-            val delayFrames = (c.engine.outLatencyMs + c.visualTrimMs).coerceAtLeast(0f) / 1000.0 * SR
+            val delayFrames = (c.engine.visualLatencyMs + c.visualTrimMs).coerceAtLeast(0f) / 1000.0 * SR
             val pos = c.engine.calibPos - delayFrames
             beats(pos, 0.0, y, laneH, C.a)
             // flash when a beat crosses the line on screen

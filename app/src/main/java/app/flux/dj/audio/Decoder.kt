@@ -17,11 +17,26 @@ object Decoder {
         onProgress: (Float) -> Unit = {},
         /** Streaming: called once ~1 s is decoded with a Track that keeps filling up in the background. */
         onStream: ((Track) -> Unit)? = null,
+        /** Extra HTTP headers (Plex token etc.). http(s) URIs are streamed directly. */
+        headers: Map<String, String> = emptyMap(),
     ): Track? {
         val ex = MediaExtractor()
         var codec: MediaCodec? = null
+        var temp: java.io.File? = null
         try {
-            ex.setDataSource(ctx, uri, null)
+            val scheme = uri.scheme?.lowercase()
+            if (scheme == "http" || scheme == "https") ex.setDataSource(uri.toString(), headers)
+            else try {
+                ex.setDataSource(ctx, uri, null)
+            } catch (e: Exception) {
+                // Some cloud providers can't give MediaExtractor a seekable descriptor. Fetch once
+                // into the cache and decode locally; the PCM cache then makes replays instant.
+                if (scheme != "content") throw e
+                val f = java.io.File.createTempFile("flux-remote", ".audio", ctx.cacheDir)
+                temp = f
+                ctx.contentResolver.openInputStream(uri)!!.use { inp -> f.outputStream().use { inp.copyTo(it) } }
+                ex.setDataSource(f.absolutePath)
+            }
             var ti = -1
             var fmt: MediaFormat? = null
             for (i in 0 until ex.trackCount) {
@@ -143,11 +158,13 @@ object Decoder {
             }
             return Track(id, title, artist, if (outLen == out.size) out else out.copyOf(outLen))
         } catch (e: Exception) {
+            android.util.Log.w("FLUX", "decode failed for $uri: ${e.javaClass.simpleName}: ${e.message}", e)
             return null
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
             try { codec?.release() } catch (_: Exception) {}
             ex.release()
+            try { temp?.delete() } catch (_: Exception) {}
         }
     }
 }

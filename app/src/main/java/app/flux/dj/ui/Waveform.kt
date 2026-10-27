@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -33,9 +34,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,6 +100,15 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                             .pointerInput2 { if (u.gridEdit) c.gridDone(i) else c.gridOpen(i) }.padding(horizontal = 8.dp),
                         contentAlignment = Alignment.Center
                     ) { Text("GRID", style = T.cap.copy(fontSize = 9.sp, letterSpacing = 0.8.sp, color = if (u.gridEdit) Color.Black else C.mu, fontWeight = FontWeight.Bold)) }
+                    if (u.loaded && u.analysisSource.isNotEmpty()) {
+                        val badge = when (u.analysisSource) { "rekordbox" -> "RB"; "manual" -> "✎ GRID"; else -> "LOCAL" }
+                        val bc = if (u.analysisSource == "flux") C.mu else C.fx
+                        Box(
+                            Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(Color(0x99000000))
+                                .border(1.dp, bc.copy(alpha = .5f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) { Text(badge, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = bc, fontWeight = FontWeight.Bold)) }
+                    }
                     Column(Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(); val up = waitForUpOrCancellation(); if (up != null) onOpenLibrary() } }
@@ -157,7 +166,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
     val u = c.ui[i]
     val col = C.deck(i)
     val tick = c.tick
-    val pts = remember { Array(3) { FloatArray(4 * 1400) } }
+    val win = remember(i) { WaveWindow() }
     Canvas(
         modifier.pointerInput(i) {
             // one finger: grab & scrub the record; two fingers: pinch to zoom (both decks)
@@ -167,6 +176,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                 var multi = false
                 var mode = 0 // 0 undecided, 1 scrub, 2 pinch
                 var tot = 0f; var p0 = 0.0
+                var searchTarget = 0.0
                 var dist0 = 1f; var z0 = c.zoomSec
                 val slop = 6.dp.toPx()
                 while (true) {
@@ -191,23 +201,27 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
                             if (mode == 3) c.gridDrag(i, ch.positionChange().x * fpp.toDouble())
                         } else {
                             if (mode == 0 && abs(tot) > slop) {
-                                p0 = d.pos; tot = 0f
+                                p0 = c.vpos(i); tot = 0f
                                 // scratch sound only if enabled in VIEW; otherwise a silent needle search
-                                if (c.waveScratch) { mode = 1; d.scratchBegin() } else { mode = 4; d.searching = true }
+                                if (c.waveScratch) { mode = 1; d.scratchBegin(); d.scratchTo(p0) } else { mode = 4; d.searching = true; searchTarget = p0 }
                             }
                             if (mode == 1) d.scratchTo(p0 - tot * fpp)
-                            if (mode == 4) d.seek(p0 - tot * fpp)
+                            if (mode == 4) {
+                                val raw = p0 - tot * fpp
+                                searchTarget = if (d.quantize) d.snapBeat(raw, 0.5) else raw
+                                d.seek(searchTarget)
+                            }
                         }
                         ch.consume()
                     }
                 }
                 if (mode == 1) d.scratchEnd()
-                if (mode == 4) d.searching = false
+                if (mode == 4) c.releaseSearchAt(i, searchTarget)
                 // a plain tap jumps to the spot you tapped (snapped to the beat with SNAP on)
                 if (mode == 0 && !multi && !u.gridEdit && d.track != null && System.currentTimeMillis() - t0 < 400) {
                     val fpp = c.zoomSec * SR * d.effRatio / size.width
                     val target = c.vpos(i) + (down.position.x - size.width / 2f) * fpp
-                    d.jumpTo(if (d.quantize) d.snapBeat(target) else target)
+                    c.jumpAudible(i, if (d.quantize) d.snapBeat(target) else target)
                 }
             }
         }
@@ -226,54 +240,49 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         val fpp = zoomSec * SR * d.effRatio.toFloat() / w
         val pos = c.vpos(i)
         val fStart = pos - fpp * w / 2
-        val bars = min((w / 2.5f).toInt(), 1390)
-        val colW = w / bars
         val bins = wave.size / 3
         val norm = t.waveNorm.let { if (it > 0f) it else peakNorm(wave).also { v -> t.waveNorm = v } } / 255f
-        for (x in 0 until bars) {
-            val f0 = fStart + x * colW * fpp
-            val b0 = (f0 / BIN).toInt()
-            val b1 = ((f0 + colW * fpp) / BIN).toInt()
-            var lo = 0; var mi = 0; var hi = 0
-            val step = max(1, (b1 - b0) / 3)
-            var b = b0
-            while (b <= b1) {
-                if (b in 0 until bins) {
-                    val l = wave[b * 3].toInt() and 255; val m = wave[b * 3 + 1].toInt() and 255; val hh = wave[b * 3 + 2].toInt() and 255
-                    if (l > lo) lo = l; if (m > mi) mi = m; if (hh > hi) hi = hh
-                }
-                b += step
-            }
-            val px = x * colW + colW / 2
-            val a0 = min(1f, lo * norm) * mid * 0.94f
-            val a1 = min(1f, mi * norm) * mid * 0.78f
-            val a2 = min(1f, hi * norm) * mid * 0.55f
-            var o = x * 4
-            pts[0][o] = px; pts[0][o + 1] = mid - a0; pts[0][o + 2] = px; pts[0][o + 3] = mid + a0
-            pts[1][o] = px; pts[1][o + 1] = mid - a1; pts[1][o + 2] = px; pts[1][o + 3] = mid + a1
-            pts[2][o] = px; pts[2][o + 1] = mid - a2; pts[2][o + 2] = px; pts[2][o + 3] = mid + a2
+        // Build the waveform once per screenful and translate the cached paths. Rebuilding the
+        // columns every frame made the envelope shimmer ("moving flame") because the max-over-bin
+        // window changed fractionally each frame.
+        val colPx = 6f
+        val margin = w * 0.3f
+        val key = "${t.id}|${c.zoomSec}|${(d.effRatio * 100).toInt()}|${w.toInt()}|${h.toInt()}|${wave.size}|${t.waveNorm}"
+        if (win.key != key || abs((win.anchor - fStart) / fpp) > margin) {
+            buildWaveWindow(win, wave, bins, norm, fStart, fpp.toDouble(), w, h, margin, colPx)
+            win.key = key
         }
-        val sw = colW * 0.82f
+        if (win.n > 0) {
+            val dx = ((win.anchor - fStart) / fpp).toFloat()
+            if (i == 0 && c.tick.longValue % 150L == 0L) {
+                android.util.Log.i("FLUX-WAVE-DRAW", "pos=${pos.toLong()} fStart=${fStart.toLong()} anchor=${win.anchor.toLong()} dx=$dx n=${win.n} w=$w")
+            }
+            withTransform({ translate(dx, 0f) }) {
+                drawPath(win.paths[0], C.lo, style = Stroke(win.pen))
+                drawPath(win.paths[1], C.mid.copy(alpha = 0.92f), style = Stroke(win.pen))
+                drawPath(win.paths[2], C.hi.copy(alpha = 0.95f), style = Stroke(win.pen))
+            }
+        }
         // loop region (behind)
         if (d.loopOn) {
             val x0 = ((d.loopIn - fStart) / fpp).toFloat(); val x1 = ((d.loopOut - fStart) / fpp).toFloat()
             drawRect(C.fx.copy(alpha = 0.16f), Offset(x0, 0f), Size(x1 - x0, h))
             drawLine(C.fx, Offset(x0, 0f), Offset(x0, h), 2f); drawLine(C.fx, Offset(x1, 0f), Offset(x1, h), 2f)
         }
-        // beat grid
+        // beat grid: downbeats get a yellow overlay so the bar structure is visible at a glance
         if (t.bpm > 0) {
             val k0 = ceil(t.beatIndex(fStart)).toInt()
             val k1 = floor(t.beatIndex(fStart + w * fpp)).toInt()
             for (k in k0..k1) {
                 val x = ((t.beatPos(k.toDouble()) - fStart) / fpp).toFloat()
                 val bar = Math.floorMod(k, 4) == 0
-                drawLine(Color.White.copy(alpha = if (bar) 0.35f else 0.12f), Offset(x, if (bar) 0f else h * 0.78f), Offset(x, h), if (bar) 2f else 1f)
+                if (bar) {
+                    drawRect(C.fx.copy(alpha = 0.10f), Offset(x - 2f, 0f), Size(4f, h))
+                    drawLine(C.fx.copy(alpha = 0.75f), Offset(x, 0f), Offset(x, h), 2.5f)
+                } else drawLine(Color.White.copy(alpha = 0.12f), Offset(x, h * 0.78f), Offset(x, h), 1f)
             }
         }
         val editGrid = u.gridEdit && t.bpm > 0
-        lines(pts[0], bars * 4, C.lo, sw)
-        lines(pts[1], bars * 4, C.mid.copy(alpha = 0.92f), sw)
-        lines(pts[2], bars * 4, C.hi.copy(alpha = 0.95f), sw)
         // past dimming
         drawRect(Color(0x99090A0F), Offset.Zero, Size(w / 2, h))
         // grid edit: draw the grid on top of the waveform so it can be lined up with the kicks
@@ -324,16 +333,67 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
     }
 }
 
+private class WaveWindow {
+    var key = ""
+    var anchor = 0.0
+    var n = 0
+    var pen = 3.2f
+    val paths = Array(3) { Path() }
+}
+
+/** Build one screenful of waveform geometry in track time; the draw loop only translates it. */
+private fun buildWaveWindow(
+    win: WaveWindow, wave: ByteArray, bins: Int, norm: Float, left: Double,
+    fpp: Double, w: Float, h: Float, margin: Float, colPx: Float,
+) {
+    val n = (((w + margin * 2) / colPx).toInt()).coerceIn(0, 1590)
+    win.n = n; win.anchor = left; win.pen = colPx * 0.82f
+    for (p in win.paths) p.reset()
+    if (n <= 1) return
+    val mid = h / 2f
+    val pLo = win.paths[0]; val pMid = win.paths[1]; val pHi = win.paths[2]
+    for (i in 0 until n) {
+        val x = -margin + i * colPx
+        val f0 = left + x * fpp
+        val b0 = floor(f0 / BIN).toInt()
+        val b1 = floor((f0 + colPx * fpp) / BIN).toInt()
+        var lo = 0; var mi = 0; var hi = 0
+        val step = max(1, (b1 - b0) / 3)
+        var b = b0
+        while (b <= b1) {
+            if (b in 0 until bins) {
+                val l = wave[b * 3].toInt() and 255
+                val m = wave[b * 3 + 1].toInt() and 255
+                val hh = wave[b * 3 + 2].toInt() and 255
+                if (l > lo) lo = l; if (m > mi) mi = m; if (hh > hi) hi = hh
+            }
+            b += step
+        }
+        val a0 = min(1f, lo * norm) * mid * 0.94f
+        val a1 = min(1f, mi * norm) * mid * 0.78f
+        val a2 = min(1f, hi * norm) * mid * 0.55f
+        pLo.moveTo(x, mid - a0); pLo.lineTo(x, mid + a0)
+        pMid.moveTo(x, mid - a1); pMid.lineTo(x, mid + a1)
+        pHi.moveTo(x, mid - a2); pHi.lineTo(x, mid + a2)
+    }
+}
+
 @Composable
 private fun Overview(c: Controller, i: Int, modifier: Modifier) {
     val d = c.engine.decks[i]
     val col = C.deck(i)
+    val path = remember { Path() }
     Canvas(
         modifier.background(Color(0xFF0A0B10)).pointerInput(i) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                d.jumpTo(down.position.x / size.width * (d.track?.frames ?: 0).toDouble())
-                drag(down.id) { ch -> d.jumpTo(ch.position.x.coerceIn(0f, size.width.toFloat()) / size.width * (d.track?.frames ?: 0).toDouble()); ch.consume() }
+                val frames = (d.track?.frames ?: 0).toDouble()
+                fun go(frac: Float) {
+                    val p = frac.coerceIn(0f, 1f) * frames
+                    d.jumpTo(if (d.quantize) d.snapBeat(p) else p)
+                }
+                go(down.position.x / size.width)
+                drag(down.id) { ch -> go(ch.position.x / size.width); ch.consume() }
             }
         }
     ) {
@@ -341,7 +401,7 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
         val t = d.track ?: return@Canvas
         val ov = t.overview ?: return@Canvas
         val w = size.width; val h = size.height
-        val cols = min(OV_COLS, w.toInt())
+        val cols = min(300, w.toInt())
         val colW = w / cols
         val on = t.ovNorm.let { if (it > 0f) it else peakNorm(ov).also { v -> t.ovNorm = v } }
         val frac = (c.vpos(i) / t.frames).toFloat()
@@ -354,10 +414,9 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
             val xx = x * colW + colW / 2
             pts[x * 4] = xx; pts[x * 4 + 1] = h / 2 - hh; pts[x * 4 + 2] = xx; pts[x * 4 + 3] = h / 2 + hh
         }
-        lines(pts, cols * 4, Color(0xFF3B4158), colW)
-        drawRect(col.copy(alpha = 0.0f))
+        fillBand(pts, cols, Color(0xFF3B4158), path)
         // played portion tint
-        clipPlayed(this, pts, cols, colW, px, col)
+        clipPlayed(this, pts, cols, px, col, path)
         for (k in 0 until 8) {
             val cp = d.hotCues[k]; if (cp < 0) continue
             val x = (cp / t.frames).toFloat() * w
@@ -368,18 +427,32 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
     }
 }
 
-private fun clipPlayed(s: androidx.compose.ui.graphics.drawscope.DrawScope, pts: FloatArray, cols: Int, colW: Float, px: Float, col: Color) {
-    val n = min(cols, max(0, (px / colW).toInt()))
-    if (n <= 0) return
-    s.lines(pts, n * 4, col.copy(alpha = 0.85f), colW)
+private fun clipPlayed(s: DrawScope, pts: FloatArray, cols: Int, px: Float, col: Color, path: Path) {
+    if (px <= 0f) return
+    s.clipRect(0f, 0f, px, s.size.height) { fillBand(pts, cols, col.copy(alpha = 0.85f), path) }
 }
 
-private val linePaint = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; isAntiAlias = false }
-private fun DrawScope.lines(pts: FloatArray, count: Int, color: Color, sw: Float) {
-    drawIntoCanvas { cv ->
-        linePaint.color = color.toArgb(); linePaint.strokeWidth = sw
-        cv.nativeCanvas.drawLines(pts, 0, count, linePaint)
+/** Vertical segments through one Path — the dense look of the old waveform without thousands of per-frame drawLines. */
+private fun DrawScope.lineBand(pts: FloatArray, count: Int, color: Color, path: Path, width: Float) {
+    if (count < 1) return
+    path.reset()
+    for (i in 0 until count) {
+        val x = pts[i * 4]
+        path.moveTo(x, pts[i * 4 + 1])
+        path.lineTo(x, pts[i * 4 + 3])
     }
+    drawPath(path, color, style = Stroke(width = width.coerceAtLeast(1f)))
+}
+
+/** Filled, mirrored band — used by the small overview. */
+private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: Path) {
+    if (count < 2) return
+    path.reset()
+    path.moveTo(pts[0], pts[1])
+    for (i in 1 until count) path.lineTo(pts[i * 4], pts[i * 4 + 1])
+    for (i in count - 1 downTo 0) path.lineTo(pts[i * 4 + 2], pts[i * 4 + 3])
+    path.close()
+    drawPath(path, color)
 }
 
 @Composable
