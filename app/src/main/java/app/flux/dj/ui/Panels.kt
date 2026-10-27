@@ -96,7 +96,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             Chip("＋ Files", true, C.a, Modifier.height(38.dp)) { onAddFiles() }
             Chip("＋ Folder", true, C.a, Modifier.height(38.dp)) { onAddFolder() }
             Chip("History", false, C.a, Modifier.height(38.dp)) { onHistory() }
-            if (c.rb == null) Chip("rekordbox", false, C.a, Modifier.height(38.dp)) { onImportXml() }
+            Chip(if (c.rb == null) "rekordbox" else "rekordbox ↻", false, C.a, Modifier.height(38.dp)) { onImportXml() }
         }
         Text(if (target in 0..1) "Tap a track to load it on deck ${c.deckName(target)}  ·  or drag it onto a waveform" else "Tap a track to load it on the free deck  ·  or drag it onto a waveform", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
 
