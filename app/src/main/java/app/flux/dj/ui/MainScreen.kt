@@ -18,10 +18,10 @@ import androidx.compose.ui.unit.sp
 import app.flux.dj.Controller
 import kotlinx.coroutines.delay
 
-enum class Sheet { NONE, LIBRARY, FX, OUT, VIEW, HISTORY }
+enum class Sheet { NONE, LIBRARY, FX, OUT, VIEW, HISTORY, SOURCES }
 
 @Composable
-fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPickSample: (Int) -> Unit, onPermission: () -> Unit, onImportXml: () -> Unit = {}) {
+fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPickSample: (Int) -> Unit, onPermission: () -> Unit, onImportXml: () -> Unit = {}, onConnectDrive: () -> Unit = {}) {
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var libTarget by remember { mutableIntStateOf(-1) }
 
@@ -52,7 +52,8 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
             }
         }
 
-        LibraryPanel(c, sheet == Sheet.LIBRARY, libTarget, { sheet = Sheet.NONE }, onAddFiles, onAddFolder, onPermission, onHistory = { sheet = Sheet.HISTORY }, onImportXml = onImportXml)
+        LibraryPanel(c, sheet == Sheet.LIBRARY, libTarget, { sheet = Sheet.NONE }, onAddFiles, onAddFolder, onPermission, onHistory = { sheet = Sheet.HISTORY }, onImportXml = onImportXml, onSources = { sheet = Sheet.SOURCES })
+        SourcesPanel(c, sheet == Sheet.SOURCES, { sheet = Sheet.NONE }, onConnectDrive, onImportXml)
         HistoryPanel(c, sheet == Sheet.HISTORY) { sheet = Sheet.NONE }
         FxPanel(c, sheet == Sheet.FX) { sheet = Sheet.NONE }
         OutputPanel(c, sheet == Sheet.OUT) { sheet = Sheet.NONE }

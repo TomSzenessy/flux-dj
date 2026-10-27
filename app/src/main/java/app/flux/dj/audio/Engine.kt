@@ -102,11 +102,26 @@ class Engine(private val ctx: Context) {
 
     /** Alignment mode: music muted, both outputs click on every beat (120 BPM). */
     @Volatile var calib = false
+    /** During auto-align: -1 = both outputs, 0 = master only, 1 = cue only. */
+    @Volatile var calibOnly = -1
+    /** System time of the last calibration loop start (the "ding" on beat 1), for mic measurements. */
+    @Volatile var calibEpochNs = 0L
+    fun calibration(on: Boolean) {
+        if (on && !calib) { calibPhase = 0; calibPos = 0; calibEpochNs = System.nanoTime() }
+        calib = on
+        if (!on) calibOnly = -1
+    }
     /** Final volume for everything that leaves the device (not the recording). */
     @Volatile var outVolume = 1f
     private var outVolS = 1f
     /** Measured delay between writing audio and hearing it on the master output (ms). */
     @Volatile var outLatencyMs = 0f
+    /** Acoustic delay of the master/room output measured with the microphone (ms). */
+    @Volatile var acousticMasterMs = -1f
+    /** Delay the eye should use: the measured master delay plus whatever extra delay the room got. */
+    val visualLatencyMs: Float get() = (if (acousticMasterMs >= 0f) acousticMasterMs else outLatencyMs) +
+        (if (outMode == OutMode.SINGLE) 0 else max(0, offsetMs))
+
     private var written = 0L
     private val ts = AudioTimestamp()
     private var calibPhase = 0
@@ -174,16 +189,28 @@ class Engine(private val ctx: Context) {
 
     fun toggleSync(i: Int) {
         val d = decks[i]; val o = decks[1 - i]
-        if (d.syncOn) { d.tempo = ((d.effRatio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f); d.syncOn = false; return }
+        if (d.syncOn) { d.tempo = ((d.effRatio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f); d.syncOn = false; d.syncRefBpm = 0f; d.syncRefMaster = -1f; return }
         if (d.bpm <= 0f || o.bpm <= 0f) return
-        if (o.syncOn) { o.tempo = ((o.effRatio - 1.0) / o.range).toFloat().coerceIn(-1f, 1f); o.syncOn = false }
-        d.syncRatio = syncTarget(d, o)
+        if (o.syncOn) { o.tempo = ((o.effRatio - 1.0) / o.range).toFloat().coerceIn(-1f, 1f); o.syncOn = false; o.syncRefBpm = 0f; o.syncRefMaster = -1f }
+        d.syncRatio = syncTargetNow(d, o)
+        d.syncRefMaster = o.effRatio.toFloat()
+        d.syncRefBpm = (currentBpm(o) * o.effRatio).toFloat()
         d.syncOn = true
-        if (d.playing && o.playing) d.needAlign = true
+        d.needAlign = true
     }
 
-    private fun syncTarget(f: Deck, l: Deck): Double {
-        var r = l.currentBpm.toDouble() / f.bpm
+    /** Tempo at the playhead, using the loop-in tempo while a loop is active. */
+    private fun currentBpm(d: Deck): Double {
+        val t = d.track ?: return d.bpm.toDouble()
+        if (t.bpm <= 0) return 0.0
+        return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
+    }
+
+    /** One-time match: current master tempo ÷ current follower tempo, folded into 0.67–1.5. */
+    private fun syncTargetNow(f: Deck, l: Deck): Double {
+        val local = currentBpm(f)
+        if (local <= 0.0) return 1.0
+        var r = (currentBpm(l) * l.effRatio) / local
         while (r > 1.5) r /= 2; while (r < 0.67) r *= 2
         return r
     }
@@ -349,6 +376,7 @@ class Engine(private val ctx: Context) {
         outputError = null
         routedMaster = ""
         written = 0L; outLatencyMs = 0f
+        shrinkTick = 0
         routedCue = ""
         trackM = makeTrack(masterDeviceId) { routedMaster = it }
         if (outMode == OutMode.DUAL) {
@@ -405,6 +433,7 @@ class Engine(private val ctx: Context) {
     }
 
     /** Grow the playing buffer by two blocks whenever the device reported new underruns (glitches). */
+    private var shrinkTick = 0
     private fun tuneLatency(t: AudioTrack, lastU: Int): Int {
         if (Build.VERSION.SDK_INT < 26) return lastU
         val u = t.underrunCount
@@ -412,6 +441,17 @@ class Engine(private val ctx: Context) {
             val cap = t.bufferCapacityInFrames
             if (t.bufferSizeInFrames < cap) t.bufferSizeInFrames = min(cap, t.bufferSizeInFrames + BLOCK * 2)
             outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
+            return u
+        }
+        // No new underruns: walk the buffer back down so output latency (and the picture delay)
+        // stays low. Halving every few seconds is inaudible; a glitch instantly grows it again.
+        if (++shrinkTick % 8 == 0) {
+            val minFrames = BLOCK * 4
+            val next = max(minFrames, t.bufferSizeInFrames / 2)
+            if (next < t.bufferSizeInFrames) {
+                t.bufferSizeInFrames = next
+                outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
+            }
         }
         return u
     }
@@ -441,9 +481,9 @@ class Engine(private val ctx: Context) {
                 val d = decks[to]
                 chans[to].lo = 0f
                 if (!d.playing) {
-                    if (d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTarget(d, decks[src]); d.syncOn = true; d.needAlign = true }
+                    if (d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTargetNow(d, decks[src]); d.syncRefMaster = decks[src].effRatio.toFloat(); d.syncRefBpm = (currentBpm(decks[src]) * decks[src].effRatio).toFloat(); d.syncOn = true; d.needAlign = true }
                     d.play()
-                } else if (!d.syncOn && d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTarget(d, decks[src]); d.syncOn = true; d.needAlign = true }
+                } else if (!d.syncOn && d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTargetNow(d, decks[src]); d.syncRefMaster = decks[src].effRatio.toFloat(); d.syncRefBpm = (currentBpm(decks[src]) * decks[src].effRatio).toFloat(); d.syncOn = true; d.needAlign = true }
                 transitionActive = true
             }
         }
@@ -459,7 +499,7 @@ class Engine(private val ctx: Context) {
                 chans[tTo].lo = 0.5f * sw
                 chans[tFrom].hi = 0.5f - 0.2f * p
                 if (p >= 1f) {
-                    decks[tFrom].pause(); decks[tTo].syncOn = false
+                    decks[tFrom].pause(); decks[tTo].syncOn = false; decks[tTo].syncRefBpm = 0f; decks[tTo].syncRefMaster = -1f
                     decks[tTo].tempo = ((decks[tTo].effRatio - 1.0) / decks[tTo].range).toFloat().coerceIn(-1f, 1f)
                     chans[tFrom].lo = 0.5f; chans[tFrom].hi = 0.5f
                     transitionActive = false; transitionProgress = 0f
@@ -471,15 +511,31 @@ class Engine(private val ctx: Context) {
         for (i in 0..1) {
             val d = decks[i]; val l = decks[1 - i]
             if (d.syncOn && d.bpm > 0 && l.bpm > 0) {
-                d.syncRatio = syncTarget(d, l)
+                // Match once. After that, only follow the master's pitch fader; tempo markers,
+                // loops and jumps must never re-pitch the synced deck.
+                val masterSpeed = l.effRatio.toFloat()
+                if (d.syncRefMaster < 0f) {
+                    d.syncRatio = syncTargetNow(d, l)
+                    d.syncRefMaster = masterSpeed
+                    d.syncRefBpm = (currentBpm(l) * l.effRatio).toFloat()
+                } else if (abs(masterSpeed - d.syncRefMaster) > 0.0005f) {
+                    d.syncRatio = (d.syncRatio * (masterSpeed / d.syncRefMaster)).coerceIn(0.5, 2.0)
+                    d.syncRefMaster = masterSpeed
+                }
                 if (d.needAlign && d.playing && l.playing) {
-                    var diff = d.phase() - l.phase(); diff -= Math.round(diff).toDouble()
-                    d.seekReq = d.pos - diff * d.track!!.spbAt(d.pos)
+                    // Align the bars you actually hear/see: compare the audible (output-delayed)
+                    // positions, then put the engine one delay ahead so the picture snaps immediately.
+                    val delayD = visualLatencyMs / 1000.0 * SR * d.effRatio
+                    val delayL = visualLatencyMs / 1000.0 * SR * l.effRatio
+                    val lBeat = l.track!!.beatIndex(l.pos - delayL)
+                    val dBeat = d.track!!.beatIndex(d.pos - delayD)
+                    val targetBeat = lBeat + 4.0 * Math.round((dBeat - lBeat) / 4.0)
+                    d.seekNow(d.track!!.beatPos(targetBeat) + delayD)
                     d.needAlign = false
-                } else if (d.playing && l.playing && !d.scratching) {
-                    var diff = d.phase() - l.phase(); diff -= Math.round(diff).toDouble()
-                    d.phaseAdj = 1.0 - diff.coerceIn(-0.1, 0.1) * 0.25
-                } else d.phaseAdj = 1.0
+                }
+                // No continuous pitch nudging: after the one-time phase match the ratio stays put,
+                // so synced audio cannot flutter. Nudge with the jog if a long mix drifts.
+                d.phaseAdj = 1.0
             } else d.phaseAdj = 1.0
         }
 
@@ -558,8 +614,12 @@ class Engine(private val ctx: Context) {
         if (recorder.active) recorder.push(mL, mR, n)
 
         // ---- headphones
-        val hm = hpMix; val hl = hpLevel * 1.4f
-        val monitorOnly = outMode == OutMode.SPLIT
+        // With no CUE lit the headphones carry the master mix (so you can take them off/on without
+        // silence). As soon as one or both CUE buttons are on, they hear only the cued decks; the
+        // CUE·M knob blends the room mix back in if you want it.
+        val anyCue = chans[0].cue || chans[1].cue
+        val hm = if (anyCue) hpMix else 1f
+        val hl = hpLevel * 1.4f
         for (k in 0 until n) {
             val a = cL[k] * (1f - hm) + mL[k] * hm
             val b = cR[k] * (1f - hm) + mR[k] * hm
@@ -586,9 +646,13 @@ class Engine(private val ctx: Context) {
         if (calib) {
             val loop = calibLoop
             var p = calibPhase
+            val only = calibOnly
             for (k in 0 until n) {
+                if (p == 0) calibEpochNs = System.nanoTime() + (k * 1_000_000_000L / SR)
                 val v = loop[p] * 0.8f
-                mL[k] = v; mR[k] = v; cL[k] = v; cR[k] = v
+                val mv = if (only <= 0) v else 0f
+                val cv = if (only != 0) v else 0f
+                mL[k] = mv; mR[k] = mv; cL[k] = cv; cR[k] = cv
                 p = if (p + 1 >= loop.size) 0 else p + 1
             }
             calibPhase = p

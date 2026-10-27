@@ -114,13 +114,32 @@ class TransportTest {
         assertEquals(d.loopIn, d.pos, 600.0)
     }
 
-    @Test fun jumpOutOfLoopReleasesIt() {
+    @Test fun loopPadStartsAndSnapsToNearestGridPoint() {
+        val t = DemoTracks.build(DemoTracks.specs[0])
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.render(BLOCK, l, r); d.play(); repeat(120) { d.render(BLOCK, l, r) }
+        val spb = t.spb
+        val grid = t.firstBeat + Math.floor((d.pos - t.firstBeat) / spb) * spb
+        // press a fraction of a beat AFTER the grid point — it must snap back onto that beat
+        d.loopSet(4f, grid + spb * 0.12)
+        assertTrue("loop started by the pad", d.loopOn)
+        assertEquals("loop-in on the nearest beat", grid, d.loopIn, 40.0)
+        assertEquals("loop length", grid + spb * 4, d.loopOut, 60.0)
+        // and just before the next beat it snaps forward to that beat
+        d.loopSet(1f, grid + spb * 0.88)
+        assertEquals("nearest beat ahead", grid + spb, d.loopIn, 40.0)
+    }
+
+    @Test fun jumpStaysInsideLoop() {
         val t = DemoTracks.build(DemoTracks.specs[0])
         val d = Deck(0); d.load(t)
         val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
         d.render(BLOCK, l, r); d.play(); d.loopSet(4f)
+        val len = d.loopOut - d.loopIn
         d.jumpTo(d.loopOut + SR * 10.0); d.render(BLOCK, l, r)
-        assertFalse(d.loopOn)
-        assertTrue(d.pos > d.loopOut)
+        assertTrue("loop stays on", d.loopOn)
+        assertTrue("inside loop", d.pos >= d.loopIn && d.pos < d.loopOut)
+        assertTrue("wrapped by loop length", d.pos - d.loopIn < len)
     }
 }

@@ -81,7 +81,7 @@ private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, color: C
 }
 
 @Composable
-fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}, onImportXml: () -> Unit = {}) {
+fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}, onImportXml: () -> Unit = {}, onSources: () -> Unit = {}) {
     SidePanel(visible, onDismiss, "Library", 580.dp) {
         var q by remember { mutableStateOf("") }
         val rev = c.libRev
@@ -96,6 +96,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             Chip("＋ Files", true, C.a, Modifier.height(38.dp)) { onAddFiles() }
             Chip("＋ Folder", true, C.a, Modifier.height(38.dp)) { onAddFolder() }
             Chip("History", false, C.a, Modifier.height(38.dp)) { onHistory() }
+            Chip(if (c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty()) "☁ Sources ●" else "☁ Sources", c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty(), C.ok, Modifier.height(38.dp)) { onSources() }
             Chip(if (c.rb == null) "rekordbox" else "rekordbox ↻", false, C.a, Modifier.height(38.dp)) { onImportXml() }
         }
         Text(if (target in 0..1) "Tap a track to load it on deck ${c.deckName(target)}  ·  or drag it onto a waveform" else "Tap a track to load it on the free deck  ·  or drag it onto a waveform", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
@@ -105,7 +106,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             val frac = c.indexDone.toFloat() / c.indexTotal
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.s1).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (c.indexDone < c.indexTotal) "✦ Analysing your library · ${c.indexDone} / ${c.indexTotal}" else "✦ Library analysed · ${c.indexTotal} tracks", style = T.cap.copy(color = C.ok, letterSpacing = 0.2.sp))
+                    Text(if (c.indexDone < c.indexTotal) "✦ Analysing local library · ${c.indexDone} / ${c.indexTotal}" + (if (c.indexSkipped > 0) " · ${c.indexSkipped} from collection.xml kept" else "") else "✦ Local library analysed · ${c.indexTotal} tracks" + (if (c.indexSkipped > 0) " · ${c.indexSkipped} with collection.xml grids" else ""), style = T.cap.copy(color = C.ok, letterSpacing = 0.2.sp))
                     if (c.indexDone < c.indexTotal) Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(C.s3)) { Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(C.ok)) }
                 }
                 if (c.indexDone < c.indexTotal) Chip(if (c.indexPaused) "Resume" else "Pause", false, C.ok, Modifier.height(26.dp)) { c.toggleIndexPause() }
@@ -136,9 +137,17 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
                 Chip(t, c.sortMode == i, C.a, Modifier.height(30.dp)) { c.sortMode = i }
             }
         }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            Text("SOURCE", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.padding(end = 2.dp))
+            Chip("All", c.filterSource == null, C.ok, Modifier.height(30.dp)) { c.filterSource = null }
+            if (c.hasLocal) Chip("Local", c.filterSource == "local", C.ok, Modifier.height(30.dp)) { c.filterSource = "local" }
+            if (c.hasPlex) Chip("Plex", c.filterSource == "plex", C.ok, Modifier.height(30.dp)) { c.filterSource = "plex" }
+            if (c.hasDrive) Chip("Drive", c.filterSource == "drive", C.ok, Modifier.height(30.dp)) { c.filterSource = "drive" }
+        }
+        Text("PLEX / DRIVE green ✓ = cached (tap to remove) · red ⇩ = cloud (tap to cache) · RB = rekordbox collection grid · ✎ = hand-edited grid", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 9.sp, fontWeight = FontWeight.Normal))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip(if (c.activeFilters > 0) "Filters · ${c.activeFilters}" else "Filters", filtersOpen || c.activeFilters > 0, C.ok, Modifier.height(30.dp)) { filtersOpen = !filtersOpen }
-            if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(30.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null }
+            if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(30.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null; c.filterSource = null }
             Spacer(Modifier.weight(1f))
             if (c.hiddenCount > 0) Chip(if (c.showHidden) "◀ Back to library" else "Removed · ${c.hiddenCount}", c.showHidden, C.mu, Modifier.height(30.dp)) { c.showHidden = !c.showHidden }
         }
@@ -154,7 +163,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             if (ref == null) Text("Key / tempo filters compare against the track on the other deck — load one first.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
 
-        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.sortMode, ref, c.showHidden, c.hidden, c.playlist, c.rbMatch) { c.filteredLibrary(target, q) }
+        val list = remember(rev, q, target, visible, c.filterKey, c.filterBpm, c.filterVibe, c.filterEnergy, c.filterSource, c.sortMode, ref, c.showHidden, c.hidden, c.playlist, c.rbMatch) { c.filteredLibrary(target, q) }
         Text(if (c.showHidden) "${list.size} removed track${if (list.size == 1) "" else "s"} — tap Restore to bring one back" else "${list.size} track${if (list.size == 1) "" else "s"}" + if (c.sortMode == 0 && ref != null) " · best matches for “${ref.title}” first" else "", style = T.cap.copy(letterSpacing = 0.3.sp), maxLines = 1)
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (!c.libPermission) item {
@@ -164,6 +173,134 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
                 }
             }
             items(list, key = { it.id }) { it -> LibRow(c, it, ref, target, onDismiss) }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------- Sources
+
+@Composable
+fun SourcesPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit, onConnectDrive: () -> Unit, onImportXml: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(c.plexPinExpiresAt) {
+        while (c.plexPinExpiresAt > 0L) {
+            clock = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    SidePanel(visible, onDismiss, "Music sources", 540.dp) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            SectionLabel("Plex / Plexamp")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.ok.copy(alpha = .35f), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (c.plexToken.isNotBlank()) {
+                    Text(if (c.plexServerName.isNotEmpty()) "Connected to ${c.plexServerName}" else "Plex connected", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.ok))
+                    Text("${c.plexItems.size} tracks stream from Plex · ${c.plexStatus.ifBlank { "ready" }}", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip("My collection", c.plexCollectionOnly, C.ok, Modifier.height(28.dp)) { c.setPlexFilter(true) }
+                        Chip("All music", !c.plexCollectionOnly, C.ok, Modifier.height(28.dp)) { c.setPlexFilter(false) }
+                    }
+                    Text(
+                        if (c.plexCollectionOnly && c.rb == null) "Import a collection.xml to use this filter — until then all Plex music is shown."
+                        else if (c.plexCollectionOnly) "Only Plex tracks that match a collection.xml entry are shown. Audiobook libraries are always skipped."
+                        else "Every music track from Plex is shown. Audiobook/spoken-word libraries are skipped.",
+                        style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton(if (c.plexBusy) "Syncing…" else "Sync library", !c.plexBusy, C.ok, Modifier.weight(1.4f).height(38.dp), solid = true) { if (!c.plexBusy) c.plexRefresh() }
+                        PillButton("Sign out", false, C.mu, Modifier.weight(1f).height(38.dp)) { c.plexSignOut() }
+                    }
+                    Text("Tracks play straight from the server and are cached as you use them, so the same file is instant next time — even offline. Plex/Drive tracks are analysed lazily when you first play them, not downloaded in the background.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                    Text("Plex-only setup: choose “My collection”, import the matching collection.xml, and let Plex supply the audio while the XML supplies grids, BPM and playlists.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.ok, fontWeight = FontWeight.Normal))
+                    if (c.bulkDownloading) {
+                        val frac = if (c.bulkTotal > 0) c.bulkDone.toFloat() / c.bulkTotal else 0f
+                        Text("Downloading for offline: ${c.bulkDone} / ${c.bulkTotal}" + (if (c.bulkFailed > 0) " · ${c.bulkFailed} failed" else ""), style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.a, fontWeight = FontWeight.Normal))
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.s4)) {
+                            Box(Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).fillMaxHeight().background(C.ok))
+                        }
+                        PillButton("Cancel download", false, C.bad, Modifier.fillMaxWidth().height(34.dp)) { c.cancelPlexDownload() }
+                    } else {
+                        val cached = c.plexItems.count { c.isCached(it) }
+                        PillButton("Download ${c.plexItems.size - cached} Plex tracks for offline", true, C.ok, Modifier.fillMaxWidth().height(38.dp)) { c.downloadPlexCache() }
+                        Text("${cached} of ${c.plexItems.size} already cached. Downloads the current selection (collection-only or all music) as compressed originals; raise the Plex cache size below first if needed.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                    }
+                } else {
+                    Text("Use your Plex library (the same one Plexamp sees) without downloading it first.", style = T.tab.copy(fontSize = 13.sp))
+                    c.plexPinCode?.let { code ->
+                        Text("Sign-in code", style = T.cap.copy(letterSpacing = 0.4.sp, fontSize = 9.sp))
+                        Text(code.chunked(4).joinToString(" "), style = T.num.copy(fontSize = 16.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold, color = C.ok), maxLines = 3)
+                        val left = ((c.plexPinExpiresAt - clock) / 1000L).coerceAtLeast(0L)
+                        Text(if (left > 0) "Plex one-time code · refreshes automatically in ${left / 60}:${String.format("%02d", left % 60)}" else "Refreshing the code…", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PillButton("Copy code", true, C.ok, Modifier.weight(1f).height(36.dp)) {
+                                try {
+                                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Plex code", code))
+                                    c.toast = "Code copied — paste it at plex.tv/link"
+                                } catch (_: Exception) { c.toast = "Copy failed — the code is $code" }
+                            }
+                            PillButton("Open Plex sign-in", true, C.ok, Modifier.weight(1.3f).height(36.dp), solid = true) {
+                                try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(c.plexAuthUrl() ?: "https://app.plex.tv/auth"))) }
+                                catch (_: Exception) { c.toast = "Open app.plex.tv on any browser" }
+                            }
+                        }
+                        Text("You don't need to type it: tap Open Plex sign-in. If you prefer, Copy code and paste it at app.plex.tv/link.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                    }
+                    PillButton(if (c.plexBusy) "Waiting for plex.tv…" else "Sign in with Plex", !c.plexBusy, C.ok, Modifier.fillMaxWidth().height(40.dp), solid = true) { c.plexSignIn() }
+                }
+                c.plexError?.let { Text(it, style = T.tab.copy(color = C.bad, fontSize = 11.sp)) }
+            }
+
+            SectionLabel("Google Drive / cloud folder")
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.a.copy(alpha = .35f), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (c.cloudFolder.isNotEmpty()) {
+                    Text(c.cloudFolderName.ifBlank { "Cloud folder" }, style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.a))
+                    Text("${c.imported.count { it.sourceKind == "drive" }} tracks · files stream from Drive, never copied to the tablet", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                    if (c.rbSource.contains("collection", true) && c.rbSource.contains(c.cloudFolderName, true)) Text("collection.xml found in this folder · ${c.rbMatch.size} tracks matched", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx, fontWeight = FontWeight.Normal))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton(if (c.cloudScanning) "Scanning…" else "Resync folder", !c.cloudScanning, C.a, Modifier.weight(1.4f).height(38.dp), solid = true) { c.resyncCloudFolder() }
+                        PillButton("Disconnect", false, C.mu, Modifier.weight(1f).height(38.dp)) { c.disconnectCloudFolder() }
+                    }
+                } else {
+                    Text("Pick a Drive folder (or any cloud folder). FLUX lists its audio, streams it on demand and picks up a collection.xml in the same folder.", style = T.tab.copy(fontSize = 13.sp))
+                    PillButton("Connect Drive folder…", true, C.a, Modifier.fillMaxWidth().height(40.dp), solid = true) { onDismiss(); onConnectDrive() }
+                }
+            }
+
+            SectionLabel("collection.xml")
+            Text(
+                if (c.rb == null) "No collection imported yet. Import one here, or put collection.xml inside the Drive folder and resync."
+                else "${c.rbSource.ifBlank { "collection.xml" }} · ${c.rbMatch.size} of ${c.rb!!.tracks.size} matched · ${c.rb!!.playlists.size} playlists. Cloud/rekordbox grids override local analysis, but a hand-edited BPM or grid is never touched.",
+                style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillButton("Import XML…", false, C.a, Modifier.weight(1f).height(38.dp)) { onDismiss(); onImportXml() }
+                if (c.rb != null) PillButton("Remove", false, C.bad, Modifier.weight(1f).height(38.dp)) { c.removeRekordbox() }
+            }
+
+            SectionLabel("Local storage")
+            var usage by remember { mutableStateOf(c.cacheUsedMb()) }
+            LaunchedEffect(visible) { if (visible) usage = c.cacheUsedMb() }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.line, RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Decoded audio: ${usage.first} MB of ${c.pcmCacheMb} MB · Plex originals: ${usage.second} MB of ${c.remoteCacheMb} MB", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                Text("Decoded PCM", style = T.cap.copy(letterSpacing = 0.4.sp, fontSize = 9.sp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    for (gb in listOf(0, 1, 2, 3, 4, 6, 8, 12, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.pcmCacheMb == gb * 1024, C.a, Modifier.height(28.dp)) { c.updatePcmCacheMb(gb * 1024); usage = c.cacheUsedMb() }
+                }
+                Text("Plex / cloud originals", style = T.cap.copy(letterSpacing = 0.4.sp, fontSize = 9.sp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    for (gb in listOf(0, 1, 2, 4, 8, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.remoteCacheMb == gb * 1024, C.a, Modifier.height(28.dp)) { c.updateRemoteCacheMb(gb * 1024); usage = c.cacheUsedMb() }
+                }
+                Text("Original files are kept compressed and decode locally next time, so a Plex-only library stays fast without keeping every track as huge PCM.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton("Clear audio cache", false, C.bad, Modifier.weight(1f).height(36.dp)) { c.clearAudioCache(); usage = 0 to 0 }
+                    PillButton("Refresh", false, C.mu, Modifier.weight(0.7f).height(36.dp)) { usage = c.cacheUsedMb() }
+                }
+            }
+
+            SectionLabel("Analysis")
+            Text("${c.indexSkipped} tracks use a rekordbox/collection grid: BPM/key analysis is skipped for them (waveforms are still built).", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+            Text("LOCAL = analysed on this tablet · RB = from collection.xml · ✎ = you changed the grid by hand.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
     }
 }
@@ -202,7 +339,19 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
                 if (delta != null) Text(String.format("%+.1f%%", delta), style = T.cap.copy(letterSpacing = 0.sp, color = if (abs(delta) < 3f) C.ok else if (abs(delta) < 8f) C.fx else C.mu))
             }
         } else if (it.energy == 0 && it.uri != null) Text("···", style = T.cap)
-        if (it.fromRb) Text("RB", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = C.fx, fontWeight = FontWeight.Bold))
+        if (it.analysisSource == "rekordbox") Text("RB", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = C.fx, fontWeight = FontWeight.Bold))
+        else if (it.analysisSource == "manual") Text("✎", style = T.cap.copy(fontSize = 10.sp, letterSpacing = 0.sp, color = C.fx, fontWeight = FontWeight.Bold))
+        else if (it.analysisSource == "flux") Text("LOCAL", style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.4.sp, color = C.dim, fontWeight = FontWeight.Bold))
+        if (it.sourceKind == "plex" || it.sourceKind == "drive") {
+            val cached = c.isCached(it)
+            val label = (if (it.sourceKind == "plex") "PLEX" else "DRIVE") + if (cached) " ✓" else " ⇩"
+            Text(
+                label,
+                modifier = Modifier.clip(RoundedCornerShape(5.dp)).pointerInput2 { c.cacheOne(it) }.padding(horizontal = 2.dp, vertical = 1.dp),
+                style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.4.sp, fontWeight = FontWeight.Bold),
+                color = if (cached) C.ok else C.bad,
+            )
+        }
         if (it.key >= 0) Box(Modifier.clip(RoundedCornerShape(7.dp)).background(kcol.copy(alpha = .18f)).border(1.dp, kcol.copy(alpha = .7f), RoundedCornerShape(7.dp)).padding(horizontal = 7.dp, vertical = 3.dp)) {
             Text(Keys.camelot(it.key), style = T.num.copy(color = kcol, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
@@ -373,18 +522,18 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 DeviceList(c, c.masterDev, allowDefault = c.outMode != OutMode.DUAL, onPick = { c.doMasterDev(it) })
             }
             if (c.outMode == OutMode.SINGLE) Text("Practice mode: while any CUE is on, this output plays only the cued decks (even with faders down). Recording always captures the real master.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
-            PictureSyncCard(c, onDismiss)
+            if (c.outMode != OutMode.DUAL && c.outMode != OutMode.SPLIT) TimingCard(c, onDismiss)
             if (c.outMode == OutMode.DUAL) {
                 SectionLabel("Headphone cue output")
                 DeviceList(c, c.cueDev, allowDefault = false, options = c.cueOptions(), onPick = { c.doCueDev(it) })
-                Text("Headphones play only decks with CUE switched on. Turn the CUE·M knob (bottom of the mixer) to blend the room mix in.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                Text("With no CUE lit the headphones play the master mix. Switch a CUE on and they hear only that deck; turn CUE·M up to blend the room back in. With two CUEs on you hear both.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
                 if (c.cueDev.isNotEmpty() && c.cueDev == c.masterDev) Text("Master and cue are the same device — pick two different outputs.", style = T.tab.copy(color = C.bad, fontSize = 12.sp))
                 if (c.routedCue.isNotEmpty()) Text("Cue playing through: ${c.routedCue}", style = T.tab.copy(color = if (c.routedCue == c.routedTo) C.fx else C.ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold))
                 if (c.routedCue.isNotEmpty() && c.routedCue == c.routedTo) Text("Android put master and cue on the same device. Try the other way round (Bluetooth as master, speaker as cue), or use USB / wired headphones for cueing.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.fx))
-                AlignCard(c, onDismiss)
+                TimingCard(c, onDismiss)
             }
             if (c.outMode == OutMode.SPLIT) {
-                AlignCard(c, onDismiss)
+                TimingCard(c, onDismiss)
             }
             Text("Android plays to one Bluetooth device at a time, and the speaker and USB-C share one output — so two devices always means one Bluetooth + one wired/speaker.", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp))
             SectionLabel("Test outputs")
@@ -486,18 +635,39 @@ private fun ToggleRow(title: String, sub: String, on: Boolean, onChange: (Boolea
 }
 
 @Composable
-private fun AlignCard(c: Controller, onDismiss: () -> Unit) {
+private fun TimingCard(c: Controller, onDismiss: () -> Unit) {
+    val measured = c.timingMeasured
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(14.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("Cue ↔ master timing", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.fx))
+        Text("Timing · room ↔ headphones ↔ picture", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.fx))
         Text(
-            if (c.offsetMs == 0) "Not aligned yet. Bluetooth usually lags 100–250 ms behind the speaker."
-            else if (c.offsetMs > 0) "Master delayed by ${c.offsetMs} ms" else "Cue delayed by ${-c.offsetMs} ms",
+            buildString {
+                if (!measured) {
+                    if (c.outMode == OutMode.SINGLE) append("Picture uses the device delay (${c.latencyMs} ms) — measure with the mic for an exact match")
+                    else append("This output set isn't measured yet. Run Auto-align so room, headphones and picture match")
+                } else {
+                    if (c.outMode == OutMode.SINGLE) append("Output delay ${c.latencyMs} ms")
+                    else append(
+                        when {
+                            c.offsetMs == 0 -> "Room and headphones in sync"
+                            c.offsetMs > 0 -> "Room waits ${c.offsetMs} ms for the headphones"
+                            else -> "Headphones wait ${-c.offsetMs} ms for the room"
+                        }
+                    )
+                    append("  ·  picture held back ${c.latencyMs} ms")
+                    append("  ·  measured with the mic")
+                }
+                if (c.visualTrimMs != 0) append("  ·  fine-tune ${if (c.visualTrimMs > 0) "+" else ""}${c.visualTrimMs} ms")
+            } + ". Waveforms, beat grid and platters are drawn at the same moment you hear the room.",
             style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal)
         )
-        PillButton("Align by ear…", true, C.fx, Modifier.fillMaxWidth().height(40.dp), solid = true) { onDismiss(); c.startAlign() }
+        PillButton("⚡ Auto-align / fine-tune…", true, C.ok, Modifier.fillMaxWidth().height(40.dp), solid = true) { onDismiss(); c.startAlign() }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PillButton("Fine-tune by hand…", false, C.fx, Modifier.weight(1.6f).height(36.dp)) { onDismiss(); c.startAlign() }
+            PillButton("Reset", false, C.mu, Modifier.weight(1f).height(36.dp)) { c.resetTiming() }
+        }
     }
 }
 
@@ -556,20 +726,6 @@ fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 PillButton("Delete", true, C.bad, Modifier.width(100.dp).height(38.dp), solid = true) { c.clearHistory() }
             } else Chip("Clear history", false, C.bad, Modifier.height(32.dp)) { c.confirmClearHistory = true }
         }
-    }
-}
-
-@Composable
-private fun PictureSyncCard(c: Controller, onDismiss: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s1).border(1.dp, C.a.copy(alpha = .4f), RoundedCornerShape(14.dp)).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text("Picture ↔ sound", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.a))
-        Text("Measured output delay ${c.latencyMs} ms" + (if (c.visualTrimMs != 0) " · fine-tune ${if (c.visualTrimMs > 0) "+" else ""}${c.visualTrimMs} ms" else "") +
-            ". Waveforms and platters are drawn that much later, so what you see is what you hear.",
-            style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 11.sp, fontWeight = FontWeight.Normal))
-        PillButton("Sync picture to sound…", false, C.a, Modifier.fillMaxWidth().height(40.dp)) { onDismiss(); c.startAlign(picture = true) }
     }
 }
 

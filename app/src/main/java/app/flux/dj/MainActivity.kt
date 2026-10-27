@@ -29,6 +29,12 @@ class MainActivity : ComponentActivity() {
             controller.addFolder(uri)
         }
     }
+    private val drivePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+            controller.connectCloudFolder(uri)
+        }
+    }
     private var samplePad = 0
     private val samplePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) controller.setSampleFromUri(samplePad, uri)
@@ -38,6 +44,11 @@ class MainActivity : ComponentActivity() {
     }
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { controller.refreshLibrary() }
     private val btPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { controller.refreshDevices() }
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        controller.micGranted = granted
+        if (granted) controller.toast = "Microphone ready — press Measure again"
+        else controller.toast = "Microphone denied — you can still align by ear"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,6 +62,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             btPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
         }
+        controller.requestMicPermission = { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
         setContent {
             FluxApp(
                 controller,
@@ -58,6 +70,7 @@ class MainActivity : ComponentActivity() {
                 onAddFolder = { folderPicker.launch(null) },
                 onPickSample = { k -> samplePad = k; samplePicker.launch(arrayOf("audio/*")) },
                 onImportXml = { xmlPicker.launch(arrayOf("text/xml", "application/xml", "*/*")) },
+                onConnectDrive = { drivePicker.launch(null) },
                 onPermission = {
                     permission.launch(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE)
                 },
@@ -65,5 +78,5 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); controller.refreshDevices(); controller.refreshLibrary() }
+    override fun onResume() { super.onResume(); controller.refreshDevices(); controller.refreshLibrary(); controller.micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
 }

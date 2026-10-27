@@ -77,12 +77,12 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
                     Box(Modifier.fillMaxSize().background(if (p) C.s4 else C.s3).border(1.dp, C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { SkipStartIcon(col) }
                 }
                 // CUE (momentary)
-                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { d.cueDown() }, onUp = { d.cueUp() }) { p ->
+                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.cuePad(i) }, onUp = { d.cueUp() }) { p ->
                     Box(Modifier.fillMaxSize().background(if (p) col.copy(alpha = .3f) else C.s3).border(1.dp, if (p) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                         Text("CUE", style = T.tab.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = if (p) col else Color(0xFFFF9F5A)))
                     }
                 }
-                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { d.togglePlay() }) { p ->
+                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.togglePlayPad(i) }) { p ->
                     Box(Modifier.fillMaxSize().background(if (u.playing) col else if (p) C.s4 else C.s3).border(1.dp, if (u.playing) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                         PlayIcon(u.playing, if (u.playing) Color.Black else col)
                     }
@@ -150,7 +150,7 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
         if (v.loops) {
             Row(Modifier.fillMaxWidth().height(34.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Chip("÷2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(0.5f) }
-                PillButton("LOOP ${beatLabel(u.loopBeats)}", u.loopOn, C.fx, Modifier.weight(2.2f).fillMaxHeight(), solid = true) { d.loopToggle() }
+                PillButton("LOOP ${beatLabel(u.loopBeats)}", u.loopOn, C.fx, Modifier.weight(2.2f).fillMaxHeight(), solid = true) { c.loopTogglePad(i) }
                 Chip("×2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(2f) }
             }
         }
@@ -175,7 +175,7 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         0 -> { color = C.cue[k]; label = "${k + 1}"; empty = !u.cues[k]; sub = if (empty) "" else "CUE" }
         1 -> { color = C.fx; label = beatLabel(LOOP_B[k]); sub = "BEAT"; lit = u.loopOn && abs(u.loopBeats - LOOP_B[k]) < 0.001f }
         2 -> { color = C.cue[2]; label = beatLabel(ROLL_B[k]); sub = "ROLL" }
-        3 -> { color = C.cue[1]; val b = JUMP_B[k]; label = (if (b > 0) "+" else "−") + beatLabel(abs(b)); sub = "JUMP" }
+        3 -> { color = C.cue[1]; val b = JUMP_B[k]; label = (if (b > 0) "+" else "−") + beatLabel(abs(b)); sub = "BAR" }
         4 -> { color = C.cue[4]; label = c.sampleNames[k]; sub = "HOLD" }
         5 -> { color = C.cue[6]; val s = k - 4; label = if (s > 0) "+$s" else if (s < 0) "−${-s}" else "0"; sub = "KEY"; lit = u.keyShift == s }
     }
@@ -183,10 +183,10 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         modifier.clip(RoundedCornerShape(12.dp)),
         onDown = {
             when (mode) {
-                0 -> d.hotCueDown(k)
-                1 -> if (u.loopOn && abs(u.loopBeats - LOOP_B[k]) < 0.001f) d.loopOff() else d.loopSet(LOOP_B[k])
-                2 -> d.rollStart(ROLL_B[k])
-                3 -> d.beatJump(JUMP_B[k])
+                0 -> c.hotCuePad(i, k)
+                1 -> c.loopPad(i, LOOP_B[k])
+                2 -> c.rollPad(i, ROLL_B[k])
+                3 -> c.beatJumpPad(i, JUMP_B[k] * 4f)
                 4 -> c.engine.triggerSample(k)
                 5 -> d.keyShift = k - 4
             }
