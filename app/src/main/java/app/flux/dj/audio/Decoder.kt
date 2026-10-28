@@ -78,6 +78,9 @@ object Decoder {
                 stream?.let { st -> st.pcm = out; st.frames = outLen / 2; st.available = outLen / 2 }
                 return true
             }
+            // Only MP3 frames are small enough to pack safely; other containers keep one sample
+            // per buffer (a FLAC frame or PCM chunk may be larger than one codec buffer).
+            val packFrames = fmt.getString(MediaFormat.KEY_MIME)?.lowercase() == "audio/mpeg"
             var lastProgress = System.nanoTime()
             var eosQueued = false
             var lastProgressCb = 0L
@@ -99,12 +102,21 @@ object Decoder {
                     var off = 0
                     var stamp = -1L
                     if (!inDone) {
-                        while (buf.capacity() - off >= 2048) {
-                            val n = ex.readSampleData(buf, off)
-                            if (n < 0) { inDone = true; break }
-                            if (stamp < 0) stamp = ex.sampleTime
-                            off += n
-                            if (!ex.advance()) { inDone = true; break }
+                        if (packFrames) {
+                            while (buf.capacity() - off >= 2048) {
+                                val n = ex.readSampleData(buf, off)
+                                if (n < 0) { inDone = true; break }
+                                if (stamp < 0) stamp = ex.sampleTime
+                                off += n
+                                if (!ex.advance()) { inDone = true; break }
+                            }
+                        } else {
+                            val n = ex.readSampleData(buf, 0)
+                            if (n < 0) inDone = true
+                            else {
+                                stamp = ex.sampleTime; off = n
+                                if (!ex.advance()) inDone = true
+                            }
                         }
                     }
                     if (off > 0) {
