@@ -23,12 +23,12 @@ val hasReleaseSigning = !releaseStore.isNullOrBlank() && !releaseStorePassword.i
 
 android {
     namespace = "app.flux.dj"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.flux.dj"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = vCode
         versionName = "$vMajor.$vMinor.$vPatch"
     }
@@ -67,7 +67,7 @@ android {
 }
 
 dependencies {
-    val bom = platform("androidx.compose:compose-bom:2024.10.01")
+    val bom = platform("androidx.compose:compose-bom:2025.12.01")
     implementation(bom)
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")

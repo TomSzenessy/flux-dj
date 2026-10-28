@@ -55,7 +55,7 @@ GitHub Issues.
 
 ## Build and test
 
-Requires JDK 17 and the Android SDK (API 35).
+Requires JDK 17 and the Android SDK (API 36).
 
 ```bash
 ./gradlew :app:testDebugUnitTest    # unit tests (audio core, DSP, rekordbox, transport policy)

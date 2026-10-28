@@ -81,3 +81,10 @@ phone. The performance surface never unmounts.
 A judged screenshot review at tablet and phone landscape sizes (light and dark
 where the system supports it), plus the on-device session in
 [`../VISION.md`](../VISION.md). `make ui-review` captures the screenshots once an Android host is available.
+
+## Performance rules
+
+Canvas draw lambdas reuse remembered arrays and paths; they must not allocate a
+`FloatArray`, `Path`, `Offset` list or cache-key string per frame. Waveform
+geometry is built once per screenful and translated while scrolling. The frame
+pump idles when no deck, preview, recorder, transition or analysis is running.

@@ -254,10 +254,12 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         // window changed fractionally each frame.
         val colPx = 6f
         val margin = w * 0.3f
-        val key = "${t.id}|${c.zoomSec}|${(d.effRatio * 100).toInt()}|${w.toInt()}|${h.toInt()}|${wave.size}|${t.waveNorm}"
-        if (win.key != key || abs((win.anchor - fStart) / fpp) > margin) {
+        if (win.trackId != t.id || win.zoom != zoomSec || win.ratio != (d.effRatio * 100).toInt() ||
+            win.w != w.toInt() || win.h != h.toInt() || win.waveSize != wave.size || win.norm != t.waveNorm ||
+            abs((win.anchor - fStart) / fpp) > margin) {
             buildWaveWindow(win, wave, bins, norm, fStart, fpp.toDouble(), w, h, margin, colPx)
-            win.key = key
+            win.trackId = t.id; win.zoom = zoomSec; win.ratio = (d.effRatio * 100).toInt()
+            win.w = w.toInt(); win.h = h.toInt(); win.waveSize = wave.size; win.norm = t.waveNorm
         }
         if (win.n > 0) {
             val dx = ((win.anchor - fStart) / fpp).toFloat()
@@ -341,7 +343,13 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
 }
 
 private class WaveWindow {
-    var key = ""
+    var trackId = ""
+    var zoom = 0f
+    var ratio = 0
+    var w = 0
+    var h = 0
+    var waveSize = 0
+    var norm = 0f
     var anchor = 0.0
     var n = 0
     var pen = 3.2f
@@ -390,6 +398,7 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
     val d = c.engine.decks[i]
     val col = C.deck(i)
     val path = remember { Path() }
+    val pts = remember(i) { FloatArray(300 * 4) }
     Canvas(
         modifier.background(C.deep).pointerInput(i) {
             awaitEachGesture {
@@ -413,7 +422,6 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
         val on = t.ovNorm.let { if (it > 0f) it else peakNorm(ov).also { v -> t.ovNorm = v } }
         val frac = (c.vpos(i) / t.frames).toFloat()
         val px = frac * w
-        val pts = FloatArray(cols * 4)
         for (x in 0 until cols) {
             val oc = (x.toLong() * OV_COLS / cols).toInt()
             val a = ((ov[oc * 3].toInt() and 255) * 0.55f + (ov[oc * 3 + 1].toInt() and 255) * 0.3f + (ov[oc * 3 + 2].toInt() and 255) * 0.15f) / 255f

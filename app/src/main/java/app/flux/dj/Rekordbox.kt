@@ -176,15 +176,3 @@ object Rekordbox {
         return out
     }
 }
-
-private fun Element.child(tag: String): Element? {
-    val nl = childNodes
-    for (i in 0 until nl.length) { val n = nl.item(i); if (n is Element && n.tagName == tag) return n }
-    return null
-}
-
-private fun Element.children(tag: String): List<Element> {
-    val nl = childNodes; val out = ArrayList<Element>()
-    for (i in 0 until nl.length) { val n = nl.item(i); if (n is Element && n.tagName == tag) out.add(n) }
-    return out
-}

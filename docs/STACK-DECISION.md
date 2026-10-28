@@ -9,8 +9,8 @@ Date: 2026-10-28
 
 ## Decision
 
-- **Language:** Kotlin 2.0.21 (JVM target 17), Gradle 8.11.1 with the Kotlin DSL.
-- **UI:** Jetpack Compose (BOM 2024.10.01) and Material 3 for sheets; Canvas for
+- **Language:** Kotlin 2.2.21 (JVM target 17), Gradle 8.13 with the Kotlin DSL.
+- **UI:** Jetpack Compose (BOM 2025.12.01) and Material 3 for sheets; Canvas for
   waveforms, jog wheels and meters.
 - **Audio:** Android `AudioTrack` in `PERFORMANCE_MODE_LOW_LATENCY`, 44.1 kHz
   float, 256-frame blocks, one real-time mixer thread; `MediaCodec` for decode;
@@ -19,7 +19,7 @@ Date: 2026-10-28
   the Storage Access Framework. No vendor SDK.
 - **Persistence:** `SharedPreferences` for settings and per-track analysis,
   app-private files for waveform, PCM and history caches.
-- **Build and test:** JDK 17, Android SDK 35 (`compileSdk`/`targetSdk` 35,
+- **Build and test:** JDK 17, Android SDK 36 (`compileSdk`/`targetSdk` 36,
   `minSdk` 26), JUnit 4 unit tests on the JVM, GitHub Actions for debug and
   release APKs.
 - **Dependencies:** AndroidX and Kotlin coroutines only; no third-party audio,

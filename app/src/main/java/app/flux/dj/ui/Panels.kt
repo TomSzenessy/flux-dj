@@ -320,11 +320,11 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
     Row(
         Modifier.fillMaxWidth()
             .pointerInput2 { c.loadTap(it, target); onDismiss() }
-            .dragAndDropSource {
+            .dragAndDropSource(block = {
                 detectTapGestures(onLongPress = { _ ->
                     startTransfer(DragAndDropTransferData(android.content.ClipData.newPlainText("flux-track", it.id)))
                 })
-            }
+            })
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {

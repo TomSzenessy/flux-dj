@@ -85,3 +85,9 @@ is the human navigation view, not a second command catalog.
 tempo maps, matching, DSP and transport policy; `:app:lintDebug` is a blocking
 gate; `:app:assembleDebug`/`:app:assembleRelease` prove both builds.
 The on-device session on the reference Android tablet is the integration oracle.
+
+## Toolchain
+
+AGP 8.13.2, Gradle 8.13 (checksum pinned), Kotlin 2.2.21, Compose BOM
+2025.12.01, `compileSdk`/`targetSdk` 36, `minSdk` 26. The release build is
+minified and signed only when the release environment supplies the keystore.

@@ -5,6 +5,8 @@ import kotlin.math.*
 /** Off-thread track analysis: 3-band waveform, BPM + beat grid, musical key, loudness. */
 object Analyzer {
 
+    private const val BINS_PER_SEC = SR / BIN
+
     /** Mono downmix that keeps one channel when the pair is out of phase instead of cancelling it. */
     private fun downmix(l: Float, r: Float): Float =
         if (l * r < 0f) { if (abs(l) >= abs(r)) l else r } else (l + r) * 0.5f
@@ -64,7 +66,7 @@ object Analyzer {
     fun rebeat(t: Track) {
         val w = t.wave ?: return
         val bins = w.size / 3
-        if (bins > 441 * 12) detectBpm(t, w, bins)
+        if (bins > BINS_PER_SEC * 12) detectBpm(t, w, bins)
     }
 
     /** Slow pass: BPM, first beat, key. */
@@ -72,7 +74,7 @@ object Analyzer {
         val w = t.wave ?: return
         val bins = w.size / 3
         if (knownBpm > 0) { t.bpm = knownBpm; t.firstBeat = 0.0 }
-        else if (bins > 441 * 12) detectBpm(t, w, bins)
+        else if (bins > BINS_PER_SEC * 12) detectBpm(t, w, bins)
         t.key = if (knownKey >= 0) knownKey else detectKey(t)
         t.analyzed = true
     }
@@ -81,7 +83,7 @@ object Analyzer {
     fun profile(t: Track) {
         val w = t.wave ?: return
         val bins = w.size / 3
-        if (bins < 441 * 6) return
+        if (bins < BINS_PER_SEC * 6) return
         var sl = 0L; var sm = 0L; var sh = 0L
         for (b in 0 until bins) { sl += w[b * 3].toInt() and 255; sm += w[b * 3 + 1].toInt() and 255; sh += w[b * 3 + 2].toInt() and 255 }
         val tot = (sl + sm + sh).toFloat().coerceAtLeast(1f)
@@ -92,7 +94,7 @@ object Analyzer {
         var four = false
         if (t.bpm > 0) {
             // kick regularity: low-band onsets on the beat vs off the beat
-            val period = 441.0 * 60.0 / t.bpm
+            val period = BINS_PER_SEC.toDouble() * 60.0 / t.bpm
             val lo = FloatArray(bins) { (w[it * 3].toInt() and 255).toFloat() }
             val fl = onset(lo, 12)
             var n = 0; var hit = 0
@@ -123,7 +125,7 @@ object Analyzer {
 
     private fun detectBpm(t: Track, w: ByteArray, bins: Int) {
         // analysis window: up to 75 s from the middle
-        val winBins = min(bins, 441 * 75)
+        val winBins = min(bins, BINS_PER_SEC * 75)
         val s0 = (bins - winBins) / 2
         val e = FloatArray(winBins)
         val lowE = FloatArray(winBins)
@@ -137,8 +139,8 @@ object Analyzer {
         }
         val flux = onset(e, 12)
         if (flux.all { it <= 0f }) { t.bpm = 0f; t.firstBeat = 0.0; return }
-        val minLag = 441f * 60f / 180f
-        val maxLag = 441f * 60f / 70f
+        val minLag = BINS_PER_SEC.toFloat() * 60f / 180f
+        val maxLag = BINS_PER_SEC.toFloat() * 60f / 70f
         var bestLag = 0f; var best = -1f
         var lag = minLag
         val scores = HashMap<Int, Float>()
@@ -150,18 +152,18 @@ object Analyzer {
         // prefer tempos in 90..150 by gentle weighting
         for ((k, s) in scores) {
             val l = k / 10f
-            val bpm = 441f * 60f / l
+            val bpm = BINS_PER_SEC.toFloat() * 60f / l
             val wgt = if (bpm in 88f..150f) 1f else 0.85f
             if (s * wgt > best) { best = s * wgt; bestLag = l }
         }
-        val coarse = 441f * 60f / bestLag
+        val coarse = BINS_PER_SEC.toFloat() * 60f / bestLag
         // Refine over the WHOLE track: a tempo that is 0.1 BPM off drifts a full beat in ~4 minutes,
         // so pick the tempo + phase whose grid lands on the most kicks from start to end.
         val lf = onset(FloatArray(bins) { (w[it * 3].toInt() and 255).toFloat() }, 12)
         var bestB = coarse; var bestO = 0; var bestS = -1f
         var cand = coarse - 0.3f
         while (cand <= coarse + 0.3001f) {
-            val p = 441.0 * 60.0 / cand
+            val p = BINS_PER_SEC.toDouble() * 60.0 / cand
             val nPh = p.toInt()
             for (o in 0 until nPh) {
                 var sc = 0f
@@ -174,7 +176,7 @@ object Analyzer {
         var bpm = (bestB * 100f).roundToInt() / 100f
         val r = bpm.roundToInt().toFloat()
         if (abs(bpm - r) < 0.04f) bpm = r
-        val period = 441.0 * 60.0 / bpm
+        val period = BINS_PER_SEC.toDouble() * 60.0 / bpm
         var fb = bestO.toDouble()
         fb -= floor(fb / period) * period
         t.bpm = bpm

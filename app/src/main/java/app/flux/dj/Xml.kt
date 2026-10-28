@@ -1,6 +1,7 @@
 package app.flux.dj
 
 import org.w3c.dom.Document
+import org.w3c.dom.Element
 import java.io.InputStream
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
@@ -36,4 +37,26 @@ internal object Xml {
     private fun DocumentBuilderFactory.setAttributeSafely(name: String, value: String) {
         try { setAttribute(name, value) } catch (_: Exception) {}
     }
+}
+
+
+/** First direct child with this tag; used by the rekordbox and Plex readers. */
+internal fun Element.child(tag: String): Element? {
+    val nl = childNodes
+    for (i in 0 until nl.length) {
+        val n = nl.item(i)
+        if (n is Element && n.tagName == tag) return n
+    }
+    return null
+}
+
+/** All direct children with this tag. */
+internal fun Element.children(tag: String): List<Element> {
+    val nl = childNodes
+    val out = ArrayList<Element>()
+    for (i in 0 until nl.length) {
+        val n = nl.item(i)
+        if (n is Element && n.tagName == tag) out.add(n)
+    }
+    return out
 }

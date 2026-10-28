@@ -82,10 +82,11 @@ private fun Strip(c: Controller, i: Int, modifier: Modifier) {
 /** Beat-match helper: where deck B's beat sits relative to deck A's (centre = in phase). */
 @Composable
 private fun PhaseMeter(c: Controller, modifier: Modifier) {
-    val diff = c.phaseDiff
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("PHASE", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.6.sp))
         androidx.compose.foundation.Canvas(Modifier.weight(1f).fillMaxHeight().padding(vertical = 4.dp)) {
+            c.tick.longValue
+            val diff = c.phaseDiff
             val w = size.width; val h = size.height
             drawRoundRect(C.s2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2))
             for (k in 1..3) drawLine(Color(0x22FFFFFF), androidx.compose.ui.geometry.Offset(w * k / 4, 2f), androidx.compose.ui.geometry.Offset(w * k / 4, h - 2f), 1f)
@@ -98,6 +99,7 @@ private fun PhaseMeter(c: Controller, modifier: Modifier) {
                 drawRoundRect(colr, androidx.compose.ui.geometry.Offset(x - 3f, 0f), androidx.compose.ui.geometry.Size(6f, h), androidx.compose.ui.geometry.CornerRadius(3f))
             }
         }
-        Text(if (diff == null) "—" else if (kotlin.math.abs(diff) < 0.03f) "LOCKED" else String.format("%+.0f%%", diff * 100), style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.3.sp, color = if (diff != null && kotlin.math.abs(diff) < 0.03f) C.ok else C.mu), modifier = Modifier.width(44.dp))
+        val d = c.phaseDiff
+        Text(if (d == null) "—" else if (kotlin.math.abs(d) < 0.03f) "LOCKED" else String.format("%+.0f%%", d * 100), style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.3.sp, color = if (d != null && kotlin.math.abs(d) < 0.03f) C.ok else C.mu), modifier = Modifier.width(44.dp))
     }
 }

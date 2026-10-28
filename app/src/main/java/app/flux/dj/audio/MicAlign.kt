@@ -110,7 +110,7 @@ object MicAlign {
 
         val captureNs = if (mapFrame >= 0) mapNs + ((maxFrame - mapFrame) * 1_000_000_000L / SR)
                          else readNs - ((frames - maxFrame) * 1_000_000_000L / SR)
-        val period = 4L * 1_000_000_000L   // the calibration loop is four beats (four seconds)
+        val period = 4L * CALIB_BEAT * 1_000_000_000L / SR   // four one-second calibration beats
         var delta = captureNs - engine.calibEpochNs
         delta = ((delta % period) + period) % period
         if (delta > period / 2) delta -= period

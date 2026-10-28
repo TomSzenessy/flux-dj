@@ -49,7 +49,6 @@ class DeckUi {
     var range by mutableFloatStateOf(0.08f)
     var cues by mutableStateOf(List(8) { false })
     var padMode by mutableIntStateOf(0)
-    var zoom by mutableIntStateOf(2)
     var hasBpm by mutableStateOf(false)
     var keyShift by mutableIntStateOf(0)
     var match by mutableStateOf("")
