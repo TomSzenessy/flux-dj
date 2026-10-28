@@ -21,7 +21,7 @@ import app.flux.dj.Controller
 import app.flux.dj.audio.Curve
 
 fun Modifier.pointerInput2(onTap: () -> Unit): Modifier = this.pointerInput(Unit) {
-    awaitEachGesture { awaitFirstDown().consume(); val up = waitForUpOrCancellation(); if (up != null) { up.consume(); onTap() } }
+    awaitEachGesture { awaitFirstDown(requireUnconsumed = false); val up = waitForUpOrCancellation(); if (up != null) { up.consume(); onTap() } }
 }
 
 @Composable

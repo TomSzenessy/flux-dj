@@ -171,52 +171,58 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         modifier.pointerInput(i) {
             // one finger: grab & scrub the record; two fingers: pinch to zoom (both decks)
             awaitEachGesture {
+                if (size.width <= 0f) return@awaitEachGesture
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val t0 = System.currentTimeMillis()
                 var multi = false
-                var mode = 0 // 0 undecided, 1 scrub, 2 pinch
+                var mode = 0 // 0 undecided, 1 scrub, 2 pinch, 3 grid, 4 search
                 var tot = 0f; var p0 = 0.0
                 var searchTarget = 0.0
+                var searching = false
                 var dist0 = 1f; var z0 = c.zoomSec
                 val slop = 6.dp.toPx()
-                while (true) {
-                    val ev = awaitPointerEvent()
-                    val pressed = ev.changes.filter { it.pressed }
-                    if (pressed.isEmpty()) break
-                    if (pressed.size >= 2) {
-                        multi = true
-                        val dd = (pressed[0].position - pressed[1].position).getDistance().coerceAtLeast(1f)
-                        if (mode == 1) d.scratchEnd()
-                        if (mode == 4) d.searching = false
-                        if (mode != 2) { mode = 2; dist0 = dd; z0 = c.zoomSec }
-                        else c.zoomSec = (z0 * dist0 / dd).coerceIn(1f, 48f)
-                        ev.changes.forEach { it.consume() }
-                    } else if (mode != 2 && d.track != null) {
-                        val ch = pressed[0]
-                        tot += ch.positionChange().x
-                        val fpp = c.zoomSec * SR * d.effRatio / size.width
-                        if (u.gridEdit) {
-                            // grid edit: drag slides the beat grid under the music
-                            if (mode == 0 && abs(tot) > slop) { mode = 3; tot = 0f }
-                            if (mode == 3) c.gridDrag(i, ch.positionChange().x * fpp.toDouble())
-                        } else {
-                            if (mode == 0 && abs(tot) > slop) {
-                                p0 = c.vpos(i); tot = 0f
-                                // scratch sound only if enabled in VIEW; otherwise a silent needle search
-                                if (c.waveScratch) { mode = 1; d.scratchBegin(); d.scratchTo(p0) } else { mode = 4; d.searching = true; searchTarget = p0 }
+                try {
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val pressed = ev.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        if (pressed.size >= 2) {
+                            multi = true
+                            val dd = (pressed[0].position - pressed[1].position).getDistance().coerceAtLeast(1f)
+                            if (mode == 1) d.scratchEnd()
+                            if (searching) { d.searching = false; c.releaseSearchAt(i, searchTarget); searching = false }
+                            if (mode != 2) { mode = 2; dist0 = dd; z0 = c.zoomSec }
+                            else c.zoomSec = (z0 * dist0 / dd).coerceIn(1f, 48f)
+                            ev.changes.forEach { it.consume() }
+                        } else if (mode != 2 && d.track != null) {
+                            val ch = pressed[0]
+                            tot += ch.positionChange().x
+                            val fpp = c.zoomSec * SR * d.effRatio / size.width
+                            if (u.gridEdit) {
+                                // grid edit: drag slides the beat grid under the music
+                                if (mode == 0 && abs(tot) > slop) { mode = 3; tot = 0f }
+                                if (mode == 3) c.gridDrag(i, ch.positionChange().x * fpp.toDouble())
+                            } else {
+                                if (mode == 0 && abs(tot) > slop) {
+                                    p0 = c.vpos(i); tot = 0f
+                                    // scratch sound only if enabled in VIEW; otherwise a silent needle search
+                                    if (c.waveScratch) { mode = 1; d.scratchBegin(); d.scratchTo(p0) }
+                                    else { mode = 4; d.searching = true; searching = true; searchTarget = p0 }
+                                }
+                                if (mode == 1) d.scratchTo(p0 - tot * fpp)
+                                if (mode == 4) {
+                                    val raw = p0 - tot * fpp
+                                    searchTarget = if (d.quantize) d.snapBeat(raw, 0.5) else raw
+                                    d.seek(searchTarget)
+                                }
                             }
-                            if (mode == 1) d.scratchTo(p0 - tot * fpp)
-                            if (mode == 4) {
-                                val raw = p0 - tot * fpp
-                                searchTarget = if (d.quantize) d.snapBeat(raw, 0.5) else raw
-                                d.seek(searchTarget)
-                            }
+                            ch.consume()
                         }
-                        ch.consume()
                     }
+                } finally {
+                    if (mode == 1) d.scratchEnd()
+                    if (searching) { d.searching = false; c.releaseSearchAt(i, searchTarget) }
                 }
-                if (mode == 1) d.scratchEnd()
-                if (mode == 4) c.releaseSearchAt(i, searchTarget)
                 // a plain tap jumps to the spot you tapped (snapped to the beat with SNAP on)
                 if (mode == 0 && !multi && !u.gridEdit && d.track != null && System.currentTimeMillis() - t0 < 400) {
                     val fpp = c.zoomSec * SR * d.effRatio / size.width
@@ -502,7 +508,7 @@ private fun GridBar(c: Controller, i: Int, modifier: Modifier) {
 
 @Composable
 private fun GridBtn(label: String, accent: Boolean = false, onClick: () -> Unit) {
-    PressBox(Modifier.height(28.dp).clip(RoundedCornerShape(7.dp)), onDown = onClick) { p ->
+    PressBox(Modifier.height(28.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
         Box(
             Modifier.fillMaxHeight().background(if (p) C.fx.copy(alpha = .5f) else if (accent) C.fx.copy(alpha = .2f) else C.s3)
                 .border(1.dp, if (accent) C.fx else C.line, RoundedCornerShape(7.dp)).padding(horizontal = 9.dp),

@@ -17,7 +17,11 @@ class Track(
     /** Frames decoded so far (== frames once [complete]). */
     @Volatile var available: Int = pcm.size / 2
     @Volatile var complete: Boolean = true
-    val durationSec: Double get() = frames / SR.toDouble()
+    /** Set when the decoder hit its length cap before the file ended. */
+    @Volatile var truncated: Boolean = false
+    /** Frames that are actually decoded: [frames] once complete, [available] while streaming. */
+    val decodedFrames: Int get() = if (complete) frames else minOf(available, pcm.size / 2)
+    val durationSec: Double get() = decodedFrames / SR.toDouble()
 
     @Volatile var bpm: Float = 0f
     @Volatile var firstBeat: Double = 0.0   // frames
@@ -37,7 +41,8 @@ class Track(
     @Volatile var waveNorm: Float = 0f
     @Volatile var ovNorm: Float = 0f
 
-    val spb: Double get() = if (bpm > 0) 60.0 / bpm * SR else 0.0
+    /** Frames per beat; a 120 BPM fallback keeps grid maths finite before analysis. */
+    val spb: Double get() = if (bpm > 0) 60.0 / bpm * SR else SR * 0.5
 
     // ---------------------------------------------------------------- tempo map
     // A track either has one tempo (bpm + firstBeat) or a tempo map: markers at beat positions, each with
@@ -49,24 +54,36 @@ class Track(
 
     /** Markers as (seconds, bpm) plus the beat-in-bar (1..4) of the first marker. */
     fun setTempoMap(secs: DoubleArray, bpms: DoubleArray, firstBattito: Int) {
-        if (secs.isEmpty()) { clearTempoMap(); return }
-        // keep markers that are at least one beat apart
+        val n = minOf(secs.size, bpms.size)
         val ps = ArrayList<Double>(); val ss = ArrayList<Double>(); val bs = ArrayList<Double>()
-        ps.add(secs[0] * SR); ss.add(60.0 / bpms[0] * SR); bs.add(((firstBattito - 1).coerceIn(0, 3)).toDouble())
-        for (i in 1 until secs.size) {
-            val p = secs[i] * SR
+        for (i in 0 until n) {
+            val sec = secs[i]; val bpm = bpms[i]
+            if (!sec.isFinite() || !bpm.isFinite() || bpm <= 0.0) continue
+            val p = sec * SR
+            if (ps.isEmpty()) {
+                ps.add(p); ss.add(60.0 / bpm * SR)
+                bs.add(((firstBattito - 1).coerceIn(0, 3)).toDouble())
+                continue
+            }
+            if (p <= ps.last()) continue
             val beats = Math.round((p - ps.last()) / ss.last())
             if (beats < 1) continue
             // fit the previous segment exactly between its two markers, so the map is continuous
             ss[ss.size - 1] = (p - ps.last()) / beats
-            ps.add(p); ss.add(60.0 / bpms[i] * SR); bs.add(bs.last() + beats)
+            ps.add(p); ss.add(60.0 / bpm * SR); bs.add(bs.last() + beats)
         }
+        if (ps.isEmpty()) { clearTempoMap(); return }
         mPos = ps.toDoubleArray(); mSpb = ss.toDoubleArray(); mBeat = bs.toDoubleArray()
-        // keep the single-tempo fields meaningful (library, sorting, fallbacks)
         // main tempo = the one the track spends most time in (for library, sorting, suggestions)
         val time = HashMap<Double, Double>()
-        for (i in secs.indices) time[bpms[i]] = (time[bpms[i]] ?: 0.0) + ((if (i + 1 < secs.size) secs[i + 1] else maxOf(secs[i] + 1, durationSec)) - secs[i])
-        bpm = time.maxByOrNull { it.value }!!.key.toFloat()
+        for (i in 0 until n) {
+            val bpm = bpms[i]
+            if (!bpm.isFinite() || bpm <= 0.0) continue
+            val start = secs[i]
+            val end = if (i + 1 < n) secs[i + 1] else maxOf(start + 1.0, durationSec)
+            if (end > start) time[bpm] = (time[bpm] ?: 0.0) + (end - start)
+        }
+        bpm = (time.maxByOrNull { it.value }?.key ?: (60.0 * SR / ss[0])).toFloat()
         firstBeat = beatPos(0.0)
     }
     fun clearTempoMap() { mPos = null; mSpb = null; mBeat = null }
@@ -93,14 +110,16 @@ class Track(
         val s = spbAt(p)
         val at = beatPos(k.toDouble())
         bpm = (60.0 * SR / s).toFloat()
-        firstBeat = at - Math.floorMod(k, 4L) * s
+        // keep absolute beat numbering: beat 0 stays the track's first beat, so the grid before
+        // the playhead is still drawable after a tempo edit.
+        firstBeat = at - k * s
         clearTempoMap()
     }
 
     /** Serialised map: "sec:bpm,sec:bpm,…;battito" (null when the track has one tempo). */
     fun tempoMapString(): String? {
         val p = mPos ?: return null; val s = mSpb!!; val b = mBeat!!
-        return p.indices.joinToString(",") { "${p[it] / SR}:${60.0 * SR / s[it]}" } + ";" + ((b[0].toInt() % 4) + 1)
+        return p.indices.joinToString(",") { "${p[it] / SR}:${60.0 * SR / s[it]}" } + ";" + (Math.floorMod(b[0].toInt(), 4) + 1)
     }
     fun applyTempoMapString(str: String) {
         val (list, bat) = str.split(";").let { it[0] to (it.getOrNull(1)?.toIntOrNull() ?: 1) }

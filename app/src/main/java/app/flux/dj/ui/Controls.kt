@@ -237,6 +237,8 @@ fun PressBox(
     modifier: Modifier = Modifier,
     onDown: () -> Unit = {}, onUp: () -> Unit = {}, onLong: (() -> Unit)? = null,
     haptic: Boolean = true,
+    /** Pads need down-trigger; buttons/confirmations must wait for a confirmed up. */
+    pressOnDown: Boolean = true,
     content: @Composable BoxScope.(pressed: Boolean) -> Unit,
 ) {
     var pressed by remember { mutableStateOf(false) }
@@ -248,14 +250,23 @@ fun PressBox(
                 awaitFirstDown(requireUnconsumed = false)
                 pressed = true
                 if (haptic) hp(HapticFeedbackConstants.VIRTUAL_KEY)
-                d()
+                if (pressOnDown) d()
                 val lp = l
+                var longFired = false
+                var up: androidx.compose.ui.input.pointer.PointerInputChange? = null
                 if (lp != null) {
-                    val up = withTimeoutOrNull(550) { waitForUpOrCancellation() }
-                    if (up == null) { lp(); hp(HapticFeedbackConstants.LONG_PRESS); waitForUpOrCancellation() }
-                } else waitForUpOrCancellation()
+                    up = withTimeoutOrNull(550) { waitForUpOrCancellation() }
+                    if (up == null) {
+                        lp(); longFired = true
+                        hp(HapticFeedbackConstants.LONG_PRESS)
+                        up = waitForUpOrCancellation()
+                    }
+                } else {
+                    up = waitForUpOrCancellation()
+                }
                 pressed = false
-                u()
+                if (pressOnDown) u()
+                else if (up != null && !longFired) { d(); u() }
             }
         },
         content = { content(pressed) }
@@ -267,7 +278,7 @@ fun PillButton(
     text: String, on: Boolean, color: Color, modifier: Modifier = Modifier, solid: Boolean = false,
     onClick: () -> Unit,
 ) {
-    PressBox(modifier.clip(RoundedCornerShape(12.dp)), onDown = onClick) { pressed ->
+    PressBox(modifier.clip(RoundedCornerShape(12.dp)), onUp = onClick, pressOnDown = false) { pressed ->
         val bg = when {
             solid && on -> color
             on -> color.copy(alpha = 0.18f)
@@ -286,21 +297,24 @@ fun PillButton(
 
 @Composable
 fun Chip(text: String, on: Boolean, color: Color = C.fx, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier.clip(RoundedCornerShape(9.dp))
-            .background(if (on) color else C.s2)
-            .pointerInput(Unit) { awaitEachGesture { awaitFirstDown().consume(); val up = waitForUpOrCancellation(); if (up != null) { up.consume(); onClick() } } },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 4.dp, vertical = 5.dp), maxLines = 1, softWrap = false)
+    val cb by rememberUpdatedState(onClick)
+    PressBox(
+        modifier.clip(RoundedCornerShape(9.dp)).background(if (on) color else C.s2),
+        onUp = { cb() }, pressOnDown = false, haptic = false,
+    ) { _ ->
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 4.dp, vertical = 5.dp), maxLines = 1, softWrap = false)
+        }
     }
 }
 
 @Composable
 fun Toggle(on: Boolean, onChange: (Boolean) -> Unit, color: Color = C.a) {
+    val cur by rememberUpdatedState(on)
+    val cb by rememberUpdatedState(onChange)
     Box(
         Modifier.size(44.dp, 26.dp).clip(RoundedCornerShape(13.dp)).background(if (on) color.copy(alpha = .9f) else C.s4)
-            .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(); val up = waitForUpOrCancellation(); if (up != null) onChange(!on) } }
+            .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); val up = waitForUpOrCancellation(); if (up != null) cb(!cur) } }
     ) {
         Box(Modifier.padding(3.dp).size(20.dp).offset(x = if (on) 18.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(Color.White))
     }

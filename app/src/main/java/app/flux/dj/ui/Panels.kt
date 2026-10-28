@@ -430,7 +430,7 @@ private fun PreviewBar(c: Controller) {
             val t = c.previewTrack() ?: return@Canvas
             val w = size.width; val h = size.height
             val ov = t.overview
-            val doneFrac = if (t.complete) 1f else (t.available.toFloat() / t.frames).coerceIn(0f, 1f)
+            val doneFrac = if (t.complete) 1f else (t.available.toFloat() / t.decodedFrames.coerceAtLeast(1)).coerceIn(0f, 1f)
             if (ov != null) {
                 val cols = minOf(OV_COLS, w.toInt() / 2)
                 val cw = w / cols

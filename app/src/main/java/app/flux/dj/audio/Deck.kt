@@ -1,6 +1,10 @@
 package app.flux.dj.audio
 
 import kotlin.math.*
+import java.util.concurrent.atomic.AtomicLong
+
+/** Sentinel for "no seek pending" in the atomic seek slot. */
+private val NO_SEEK = java.lang.Double.doubleToRawLongBits(Double.NaN)
 
 /**
  * One virtual turntable/CDJ. All fields touched by the UI thread are @Volatile; structural changes
@@ -17,7 +21,11 @@ class Deck(val index: Int) {
     @Volatile var scratching = false
     @Volatile var scratchTarget = 0.0
     @Volatile var bend = 0f
-    @Volatile var seekReq = Double.NaN
+    /** Sought position as raw double bits; a single atomic get-and-set consumes it in [render]. */
+    private val seekBits = AtomicLong(NO_SEEK)
+    var seekReq: Double
+        get() = java.lang.Double.longBitsToDouble(seekBits.get())
+        set(value) { seekBits.set(java.lang.Double.doubleToRawLongBits(value)) }
     @Volatile var cue = 0.0
     @Volatile var loopOn = false
     @Volatile var loopIn = 0.0
@@ -91,36 +99,45 @@ class Deck(val index: Int) {
     }
 
     fun load(t: Track) {
-        playing = false; previewing = false; scratching = false; loopOn = false; syncOn = false
-        track = t
+        playing = false; previewing = false; scratching = false; searching = false
+        loopOn = false; syncOn = false; slipActive = false; slipPos = 0.0
+        bend = 0f; phaseAdj = 1.0; needAlign = false; keyShift = 0
         for (i in 0 until 8) hotCues[i] = -1.0
         hotCueRev++
         cue = maxOf(0.0, t.firstBeat)
         pos = 0.0; rate = 0.0
         seekReq = cue
         resetGrains = true
+        visualHoldPos = -1.0
+        track = t
     }
 
     /** Jump to the very start of the track (keeps playing if it was playing). */
     fun toStart() { val t = track ?: return; seekReq = 0.0; loopOn = false; if (!playing) cue = t.firstBeat }
 
+    /** Last legal frame (never negative, even for an empty/streaming track). */
+    private fun endFrame(): Double = ((track?.frames ?: 1) - 1).coerceAtLeast(0).toDouble()
+
     /** Keep a seek inside an active loop instead of leaving it stuck beyond the out point. */
     private fun wrapToLoop(p: Double): Double {
         if (!loopOn) return p
-        val len = loopOut - loopIn
+        val end = min(loopOut, endFrame())
+        val len = end - loopIn
         if (len <= 1.0) return p
         var x = p
-        if (x >= loopOut) x = loopIn + (x - loopIn) % len
+        if (x >= end) x = loopIn + (x - loopIn) % len
         if (x < loopIn) x = loopIn + (((x - loopIn) % len) + len) % len
         return x
     }
 
-    fun seek(p: Double) { seekReq = wrapToLoop(p).coerceIn(0.0, (track?.frames ?: 1).toDouble() - 2); visualHoldPos = -1.0 }
+    fun seek(p: Double) { seekReq = wrapToLoop(p).coerceIn(0.0, endFrame()); visualHoldPos = -1.0 }
 
     /** Apply a seek immediately (UI-originated jumps) so the eye does not wait for the audio thread. */
     fun seekNow(p: Double) {
-        pos = wrapToLoop(p).coerceIn(0.0, (track?.frames ?: 1).toDouble() - 2)
-        seekReq = Double.NaN
+        val at = wrapToLoop(p).coerceIn(0.0, endFrame())
+        pos = at
+        // Publish the same target atomically so a seek arriving during the next block is not lost.
+        seekReq = at
         resetGrains = true
         rate = 0.0
         rampNs = 0L
@@ -175,7 +192,7 @@ class Deck(val index: Int) {
      * runs restarts from the cue.
      */
     fun hotCueDown(i: Int, at: Double = pos) {
-        if (track == null) return
+        if (track == null || i !in hotCues.indices) return
         val c = hotCues[i]
         if (c < 0) { hotCues[i] = if (quantize) snapBeat(at) else at; hotCueRev++; return }
         previewing = false
@@ -196,18 +213,24 @@ class Deck(val index: Int) {
     fun loopSet(beats: Float, at: Double = pos) {
         if (track == null) return
         loopBeats = beats
-        val s = if (quantize && bpm > 0) snapBeat(at) else at.coerceIn(0.0, (track!!.frames - 2).toDouble())
-        loopIn = s; loopOut = beatsFrom(s, beats.toDouble())
-        loopOn = true
+        val end = endFrame()
+        val snapped = if (quantize && bpm > 0) snapBeat(at) else at
+        val s = (if (snapped > end) at else snapped).coerceIn(0.0, maxOf(0.0, end - 1.0))
+        loopIn = s
+        loopOut = beatsFrom(loopIn, beats.toDouble()).coerceIn(loopIn + 1.0, maxOf(loopIn + 1.0, end))
+        loopOn = loopOut > loopIn
         // land exactly on the grid point so the loop is tight (a few ms of correction at most)
-        if (playing && abs(s - pos) < spbHere() * 0.75) seekReq = s
+        if (loopOn && playing && abs(s - pos) < spbHere() * 0.75) seekReq = s
     }
     fun loopToggle(at: Double = pos) { if (loopOn) loopOn = false else loopSet(loopBeats, at) }
     fun loopOff() { loopOn = false }
     fun loopScale(f: Float) {
         val nb = (loopBeats * f).coerceIn(0.125f, 64f)
         loopBeats = nb
-        if (loopOn) loopOut = beatsFrom(loopIn, nb.toDouble())
+        if (loopOn) {
+            val end = endFrame()
+            loopOut = beatsFrom(loopIn, nb.toDouble()).coerceIn(loopIn + 1.0, maxOf(loopIn + 1.0, end))
+        }
     }
     fun rollStart(beats: Float, at: Double = pos) {
         slipActive = true; slipPos = pos
@@ -238,10 +261,19 @@ class Deck(val index: Int) {
         if (t == null) { java.util.Arrays.fill(oL, 0, n, 0f); java.util.Arrays.fill(oR, 0, n, 0f); return }
         val pcm = t.pcm
         val complete = t.complete
-        val frames = if (complete) t.frames else minOf(t.available, pcm.size / 2)
-        val lastIdx = maxOf(2, frames - 3)
-        if (!seekReq.isNaN()) {
-            pos = seekReq; seekReq = Double.NaN; resetGrains = true
+        // Clamp to the array we actually hold: the decoder may publish a bigger frame count
+        // before/after swapping `pcm`, and the audio thread must never index past its snapshot.
+        val frames = minOf(if (complete) t.frames else t.available, pcm.size / 2)
+        if (frames < 6) {
+            java.util.Arrays.fill(oL, 0, n, 0f); java.util.Arrays.fill(oR, 0, n, 0f)
+            rate = 0.0; level = 0f
+            return
+        }
+        val lastIdx = frames - 3
+        val req = seekBits.getAndSet(NO_SEEK)
+        if (req != NO_SEEK) {
+            pos = java.lang.Double.longBitsToDouble(req).coerceIn(0.0, lastIdx.toDouble())
+            resetGrains = true
             rate = if (playing) rate else 0.0
             lastSeekNs = System.nanoTime()
             rampNs = if (noRampSeek) 0L else System.nanoTime()
@@ -252,7 +284,7 @@ class Deck(val index: Int) {
             rate = 0.0; level = 0f; resetGrains = true
             return
         }
-        var posD = pos
+        var posD = pos.coerceIn(0.0, lastIdx.toDouble())
         val base = ratioBase()
         effRatio = base
         val target = base * (1.0 + bend) * phaseAdj
@@ -263,7 +295,7 @@ class Deck(val index: Int) {
         val pitchF = (if (keyLock) 1.0 else base) * 2.0.pow(shift / 12.0)
         var r = rate
         var lvl = 0f
-        val lo = loopOn; val li = loopIn; val lo2 = loopOut
+        val lo = loopOn; val li = loopIn; val lo2 = min(loopOut, lastIdx.toDouble())
         for (i in 0 until n) {
             val desired: Double; val coef: Double
             if (scr) { desired = ((scratchTarget - posD) / 1400.0).coerceIn(-14.0, 14.0); coef = 0.06 }
@@ -310,7 +342,7 @@ class Deck(val index: Int) {
                 }
                 posD += r
                 if (slipActive && playing) slipPos += base
-                if (lo && r > 0 && posD >= lo2 && !scr) {
+                if (lo && r > 0 && posD >= lo2 && !scr && lo2 > li) {
                     posD -= (lo2 - li)
                     resetGrains = true
                 }
