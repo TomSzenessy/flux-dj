@@ -26,7 +26,7 @@ class SecretMatchTests(unittest.TestCase):
         pem = lambda kind: f"{DASH}BEGIN {kind}{DASH}\nabc\n{DASH}END {kind}{DASH}"
         table = [
             ("private key", pem("RSA PRIVATE KEY"), pem("RSA PUBLIC KEY")),
-            ("private key", pem("PGP PRIVATE KEY BLOCK"), f"{DASH}BEGIN RSA PRIVATE KEY{DASH}\nno end marker"),
+            ("private key", pem("PGP PRIVATE KEY BLOCK"), f"{DASH}BEGIN RSA " + "PRIVATE KEY{DASH}\nno end marker"),
             ("GitHub token", "gh" + "p_" + A20, "gh" + "p_" + "a" * 19),
             ("GitHub token", "github" + "_pat_" + A20, "xgh" + "p_" + A20),
             ("AWS access key", "AK" + "IA" + "A" * 16, "AK" + "IA" + "A" * 15),

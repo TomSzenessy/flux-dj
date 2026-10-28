@@ -1,7 +1,7 @@
 # FLUX app architecture
 
 <!-- index: design | FLUX Android app structure, audio engine seams, and state ownership | Adding a screen, changing audio behaviour, or locating a module. -->
-<!-- covers: app/** build.gradle.kts settings.gradle.kts gradle.properties gradlew.bat gradle/** -->
+<!-- covers: app/** build.gradle.kts settings.gradle.kts gradle.properties gradlew.bat gradle/** .github/workflows/android.yml -->
 
 One Android application module (`:app`) in Kotlin. The audio engine is plain
 Kotlin/JVM code with no Android UI dependency; the Compose layer observes its
