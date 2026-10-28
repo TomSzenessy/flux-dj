@@ -66,7 +66,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
         }
 
         LibraryPanel(c, sheet == Sheet.LIBRARY, libTarget, { sheet = Sheet.NONE }, onAddFiles, onAddFolder, onPermission, onHistory = { sheet = Sheet.HISTORY }, onImportXml = onImportXml, onSources = { sheet = Sheet.SOURCES })
-        SourcesPanel(c, sheet == Sheet.SOURCES, { sheet = Sheet.NONE }, onConnectDrive, onImportXml)
+        SourcesPanel(c, sheet == Sheet.SOURCES, { c.stopPlexSignIn(); sheet = Sheet.NONE }, onConnectDrive, onImportXml)
         HistoryPanel(c, sheet == Sheet.HISTORY) { sheet = Sheet.NONE }
         FxPanel(c, sheet == Sheet.FX) { sheet = Sheet.NONE }
         OutputPanel(c, sheet == Sheet.OUT) { sheet = Sheet.NONE }
@@ -98,6 +98,9 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
                     Text("rekordbox collection imported", style = T.tab.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = C.fx))
                     Text("${r.matched} of ${r.total} tracks found on this tablet. Their beat grids, keys and hot cues now come from rekordbox.", style = T.tab.copy(fontSize = 13.sp))
                     Text("${r.playlists} playlists · ${r.hotCues} hot cues · ${r.variable} tracks with changing tempo (full tempo maps)", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 11.sp))
+                    if (r.duplicateTracks > 0 || r.duplicateCues > 0) {
+                        Text("The export contained ${r.duplicateTracks} duplicate track id(s) and ${r.duplicateCues} duplicate hot-cue slot(s); the last one won.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.bad))
+                    }
                     if (r.missing.isNotEmpty()) {
                         Text("Not on this tablet (${r.missing.size}) — add the files and they're matched automatically:", style = T.tab.copy(color = C.mu, fontSize = 12.sp))
                         androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 220.dp)) {

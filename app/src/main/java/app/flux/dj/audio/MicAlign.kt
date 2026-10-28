@@ -1,6 +1,7 @@
 package app.flux.dj.audio
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
@@ -29,6 +30,7 @@ object MicAlign {
     fun hasPermission(ctx: Context): Boolean =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+    @SuppressLint("MissingPermission") // checked above with hasPermission(); failures are caught below
     fun measure(ctx: Context, engine: Engine, timeoutMs: Long = 6500, onProgress: (Float) -> Unit = {}): MicReading? {
         if (!hasPermission(ctx)) return null
         val minBuf = AudioRecord.getMinBufferSize(SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)

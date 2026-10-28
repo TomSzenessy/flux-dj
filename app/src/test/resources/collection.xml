@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="7.0.0"/>
+  <COLLECTION Entries="5">
+    <TRACK TrackID="1" Name="First Light" Artist="Test Artist" Genre="House" TotalTime="30" AverageBpm="128.00" Tonality="9A" Location="file://localhost/Users/dj/Music/Test%20Artist%20-%20First%20Light.mp3" Rating="204">
+      <TEMPO Inizio="0.025" Bpm="128.00" Battito="1"/>
+      <POSITION_MARK Name="Intro" Num="0" Start="1.5" Type="0"/>
+      <POSITION_MARK Name="Drop" Num="4" Start="15.0" Type="0"/>
+      <POSITION_MARK Name="" Num="-1" Start="8.0" Type="0"/>
+    </TRACK>
+    <TRACK TrackID="2" Name="Tempo Drift" Artist="Test Artist" Genre="Techno" TotalTime="30" AverageBpm="132.00" Tonality="F♯m" Location="file://localhost/Users/dj/Music/Test%20Artist%20-%20Tempo%20Drift.flac" Rating="255">
+      <TEMPO Inizio="0.0" Bpm="132.00" Battito="1"/>
+      <TEMPO Inizio="10.0" Bpm="130.00" Battito="45"/>
+      <TEMPO Inizio="20.0" Bpm="134.00" Battito="87"/>
+      <POSITION_MARK Name="Loop" Num="0" Start="2.0" Type="0"/>
+      <POSITION_MARK Name="Duplicate" Num="0" Start="3.0" Type="0"/>
+    </TRACK>
+    <TRACK TrackID="3" Name="Flat Key" Artist="Other" Genre="Disco" TotalTime="30" AverageBpm="120.00" Tonality="Db" Location="file://localhost/Users/dj/Music/Other%20-%20Flat%20Key.aiff" Rating="51"/>
+    <TRACK TrackID="4" Name="Original" Artist="Old" Genre="House" TotalTime="30" AverageBpm="124.00" Tonality="Am" Location="file://localhost/Users/dj/Music/Old%20-%20Original.mp3"/>
+    <TRACK TrackID="4" Name="Replaced Duplicate" Artist="New" Genre="House" TotalTime="30" AverageBpm="125.00" Tonality="Am" Location="file://localhost/Users/dj/Music/New%20-%20Replaced.mp3"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="1">
+      <NODE Name="Sets" Type="0" Count="1">
+        <NODE Name="Warmup" Type="1" KeyType="0" Entries="3">
+          <TRACK Key="1"/>
+          <TRACK Key="2"/>
+          <TRACK Key="3"/>
+        </NODE>
+      </NODE>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>

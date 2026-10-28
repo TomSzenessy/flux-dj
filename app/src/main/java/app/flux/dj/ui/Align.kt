@@ -7,6 +7,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -50,7 +52,8 @@ fun AlignScreen(c: Controller) {
     val showPicture = lane == 1 || c.outMode == OutMode.SINGLE
     Box(Modifier.fillMaxSize().background(Color(0xEE05060A)).pointerInput2 { c.cancelAlign() }, contentAlignment = Alignment.Center) {
         Column(
-            Modifier.widthIn(max = 900.dp).fillMaxWidth(0.85f).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).pointerInput2 { }.padding(24.dp),
+            Modifier.widthIn(max = 900.dp).fillMaxWidth(0.9f).fillMaxHeight(0.92f)
+                .verticalScroll(rememberScrollState()).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).pointerInput2 { }.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Timing & alignment", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))

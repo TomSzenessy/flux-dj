@@ -7,23 +7,25 @@ import org.w3c.dom.Element
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import javax.xml.parsers.DocumentBuilderFactory
 
 /** A track that lives on a remote server. [url] is streamed straight by the decoder. */
 class RemoteTrack(
     val id: String, val title: String, val artist: String, val durMs: Long,
-    val url: String, val fileStem: String, val source: String,
+    val url: String, val fileStem: String,
 )
 
 class PlexPin(val id: Long, val code: String, val expiresInSec: Int = 1800)
 class PlexServer(val name: String, val uri: String)
-class PlexSection(val key: String, val title: String, val count: Int)
+class PlexSection(val key: String, val title: String)
 
 /**
  * Minimal Plex client — Plexamp is just a Plex client, so signing in to Plex gives FLUX the same
  * library and the original files. No SDK: HttpURLConnection + org.json/XML, because the app has no
  * third-party dependencies.
  */
+private const val MAX_RESPONSE_CHARS = 32 * 1024 * 1024
+private const val MAX_TRACKS = 20_000
+
 class PlexClient(
     private val clientId: String,
     private val product: String = "FLUX",
@@ -48,29 +50,55 @@ class PlexClient(
     }
 
     private fun http(url: String, method: String = "GET", headers: Map<String, String> = emptyMap(), body: ByteArray? = null): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = method
-            c.connectTimeout = 12_000
-            c.readTimeout = 25_000
-            c.instanceFollowRedirects = true
-            (common + headers).forEach { (k, v) -> c.setRequestProperty(k, v) }
-            if (body != null || method == "POST") {
-                c.doOutput = true
-                c.setFixedLengthStreamingMode(body?.size ?: 0)
-                if (body != null) c.outputStream.use { it.write(body) }
-            }
-            val code = c.responseCode
-            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code !in 200..299) throw IOException("Plex HTTP $code${if (text.isNotBlank()) ": ${text.take(120)}" else ""}")
-            return text
-        } finally { c.disconnect() }
+        var target = url
+        for (attempt in 0..5) {
+            Http.requireSafe(target)
+            val c = URL(target).openConnection() as HttpURLConnection
+            var redirect: String? = null
+            try {
+                c.requestMethod = method
+                c.connectTimeout = 12_000
+                c.readTimeout = 25_000
+                // Follow redirects manually: a custom token header must never travel to another host.
+                c.instanceFollowRedirects = false
+                (common + headers).forEach { (k, v) -> c.setRequestProperty(k, v) }
+                if (body != null || method == "POST") {
+                    c.doOutput = true
+                    c.setFixedLengthStreamingMode(body?.size ?: 0)
+                    if (body != null) c.outputStream.use { it.write(body) }
+                }
+                val code = c.responseCode
+                if (code in 300..399 && method == "GET") {
+                    redirect = Http.resolveRedirect(target, c.getHeaderField("Location"))
+                } else {
+                    val text = (if (code in 200..299) c.inputStream else c.errorStream)
+                        ?.bufferedReader()?.use { readCapped(it) } ?: ""
+                    if (code !in 200..299) throw IOException("Plex HTTP $code${if (text.isNotBlank()) ": ${text.take(120)}" else ""}")
+                    return text
+                }
+            } finally { c.disconnect() }
+            target = redirect ?: throw IOException("Redirect without a target")
+        }
+        throw IOException("Too many redirects")
+    }
+
+    private fun readCapped(reader: java.io.Reader): String {
+        val sb = StringBuilder()
+        val buf = CharArray(8192)
+        var total = 0
+        while (true) {
+            val n = reader.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > MAX_RESPONSE_CHARS) throw IOException("Plex response is too large")
+            sb.append(buf, 0, n)
+        }
+        return sb.toString()
     }
 
     private fun xml(url: String, token: String): Document {
         val body = http(url, headers = mapOf("X-Plex-Token" to token, "Accept" to "application/xml"))
-        val f = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }
-        return f.newDocumentBuilder().parse(body.byteInputStream())
+        return Xml.parse(body.byteInputStream())
     }
 
     // ------------------------------------------------------------------ sign-in
@@ -119,9 +147,10 @@ class PlexClient(
 
     /** True when a server URI answers /identity quickly (used to skip dead Docker/relay addresses). */
     fun reachable(uri: String, token: String): Boolean {
+        try { Http.requireSafe("$uri/identity") } catch (_: Exception) { return false }
         val c = try { URL("$uri/identity").openConnection() as HttpURLConnection } catch (_: Exception) { return false }
         return try {
-            c.connectTimeout = 4000; c.readTimeout = 4000; c.instanceFollowRedirects = true
+            c.connectTimeout = 4000; c.readTimeout = 4000; c.instanceFollowRedirects = false
             (common + mapOf("X-Plex-Token" to token, "Accept" to "application/xml")).forEach { (k, v) -> c.setRequestProperty(k, v) }
             c.responseCode in 200..299
         } catch (_: Exception) { false } finally { c.disconnect() }
@@ -138,14 +167,18 @@ class PlexClient(
             // Audiobook/spoken-word libraries are type "artist" too; keep them out of a DJ library.
             val spoken = listOf("hörbuch", "hoerbuch", "horbuch", "audiobook", "audiobooks", "podcast",
                 "spoken", "hörspiel", "hoerspiel", "horspiel", "bücher", "buecher", "books")
-            if (spoken.any { title.lowercase().contains(it) }) return@mapNotNull null
-            PlexSection(d.getAttribute("key"), title, d.getAttribute("count").toIntOrNull() ?: 0)
+            if (spoken.any { title.lowercase(java.util.Locale.ROOT).contains(it) }) return@mapNotNull null
+            PlexSection(d.getAttribute("key"), title)
         }
     }
 
     fun tracks(server: String, token: String, sectionKey: String): List<RemoteTrack> {
-        val doc = xml("$server/library/sections/$sectionKey/all?type=10&X-Plex-Container-Start=0&X-Plex-Container-Size=5000", token)
-        return doc.documentElement.children("Track").mapNotNull { t ->
+        val out = ArrayList<RemoteTrack>()
+        var start = 0
+        val page = 2000
+        while (start < MAX_TRACKS) {
+            val doc = xml("$server/library/sections/$sectionKey/all?type=10&X-Plex-Container-Start=$start&X-Plex-Container-Size=$page", token)
+            val batch = doc.documentElement.children("Track").mapNotNull { t ->
             val key = t.getAttribute("ratingKey").ifEmpty { return@mapNotNull null }
             val title = t.getAttribute("title").ifEmpty { "Untitled" }
             val dur = t.getAttribute("duration").toLongOrNull() ?: 0L
@@ -162,9 +195,14 @@ class PlexClient(
             RemoteTrack(
                 "plex:$key", title,
                 t.getAttribute("grandparentTitle").ifEmpty { t.getAttribute("originalTitle") },
-                dur, url, stem, "plex",
+                dur, url, stem,
             )
+            }
+            out.addAll(batch)
+            if (batch.size < page) break
+            start += page
         }
+        return out
     }
 }
 

@@ -14,9 +14,8 @@ object Decoder {
     /** Give up when neither the extractor nor the codec made progress for this long. */
     private const val STALL_NS = 30_000_000_000L
 
-    /** [window] = decode only ~80 s from the middle of the file (for fast library indexing). */
     fun decode(
-        ctx: Context, uri: Uri, id: String, title: String, artist: String, window: Boolean = false,
+        ctx: Context, uri: Uri, id: String, title: String, artist: String,
         onProgress: (Float) -> Unit = {},
         /** Streaming: called once ~1 s is decoded with a Track that keeps filling up in the background. */
         onStream: ((Track) -> Unit)? = null,
@@ -49,7 +48,6 @@ object Decoder {
             if (ti < 0 || fmt == null) return null
             ex.selectTrack(ti)
             val durUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
-            if (window && durUs > 120_000_000L) ex.seekTo(durUs / 2 - 40_000_000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             var inRate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var inCh = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             if (inCh <= 0 || inRate <= 0) return null
@@ -57,7 +55,7 @@ object Decoder {
             codec.configure(fmt, null, null, 0)
             codec.start()
 
-            val limit = SR * 2 * (if (window) 80 else MAX_SECONDS)
+            val limit = SR * 2 * MAX_SECONDS
             // Start small and grow: preallocating the whole file cost ~42 MB for a 4-minute track.
             var out = ShortArray(minOf(limit, SR * 2 * START_SECONDS))
             var outLen = 0
@@ -154,7 +152,7 @@ object Decoder {
                     }
                     codec.releaseOutputBuffer(oi, false)
                     lastProgress = System.nanoTime()
-                    if (onStream != null && !window) {
+                    if (onStream != null) {
                         val st = stream
                         if (st == null && outLen >= SR * 2) {
                             stream = Track(id, title, artist, out).also { s ->

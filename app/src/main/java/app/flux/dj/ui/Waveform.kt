@@ -438,18 +438,6 @@ private fun clipPlayed(s: DrawScope, pts: FloatArray, cols: Int, px: Float, col:
     s.clipRect(0f, 0f, px, s.size.height) { fillBand(pts, cols, col.copy(alpha = 0.85f), path) }
 }
 
-/** Vertical segments through one Path — the dense look of the old waveform without thousands of per-frame drawLines. */
-private fun DrawScope.lineBand(pts: FloatArray, count: Int, color: Color, path: Path, width: Float) {
-    if (count < 1) return
-    path.reset()
-    for (i in 0 until count) {
-        val x = pts[i * 4]
-        path.moveTo(x, pts[i * 4 + 1])
-        path.lineTo(x, pts[i * 4 + 3])
-    }
-    drawPath(path, color, style = Stroke(width = width.coerceAtLeast(1f)))
-}
-
 /** Filled, mirrored band — used by the small overview. */
 private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: Path) {
     if (count < 2) return

@@ -55,7 +55,8 @@ Every screen ships these states: empty (no track loaded), loading (decoding,
 playable after about 1 s), analysing (BPM/key pending), ready, error (decode or
 network failure with a retry), and permission-denied (library or microphone).
 Sheets close on the scrim and on Back (one `BackHandler` closes the topmost
-overlay); the performance surface never unmounts.
+overlay); dialog widths clamp to the screen and the Align sheet scrolls on a
+phone. The performance surface never unmounts.
 
 ## Accessibility
 

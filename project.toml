@@ -159,7 +159,7 @@ kind = "code"
 status = "active"
 owner = "TomSzenessy"
 quality_oracle = "Gradle unit tests for the audio core plus a judged on-device mix session on the Xiaomi Pad 5"
-verification = [["./gradlew", ":app:testDebugUnitTest"], ["./gradlew", ":app:assembleDebug"]]
+verification = [["./gradlew", ":app:testDebugUnitTest"], ["./gradlew", ":app:lintDebug"], ["./gradlew", ":app:assembleDebug"]]
 extra_paths = ["mockup"]
 [[skills]]
 package = "Jakeschincariol/replica-skill@product-recon"

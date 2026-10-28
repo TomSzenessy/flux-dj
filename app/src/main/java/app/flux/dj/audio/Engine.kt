@@ -145,8 +145,6 @@ class Engine(private val ctx: Context) {
     }
     /** Current playhead inside [calibLoop] (frames). */
     @Volatile var calibPos = 0
-    /** Frames since the last click (for the UI pulse). */
-    @Volatile var calibSinceClick = 0
     private val outM = FloatArray(BLOCK * 2)
     private val outC = FloatArray(BLOCK * 2)
 
@@ -183,8 +181,6 @@ class Engine(private val ctx: Context) {
     private var tTotal = 0.0; private var tElapsed = 0.0; private var tXf0 = 0f; private var tXf1 = 1f
     private var tFromLo = 0.5f; private var tFromHi = 0.5f
     private var tToLo = 0.5f; private var tToHi = 0.5f
-
-    val master_: Int get() = leader()
 
     /** Deck currently acting as tempo master (the one that is not following). */
     fun leader(): Int = when {
@@ -678,7 +674,6 @@ class Engine(private val ctx: Context) {
             }
             calibPhase = p
             calibPos = p
-            calibSinceClick = p % CALIB_BEAT
         }
         // ---- outputs
         when (outMode) {

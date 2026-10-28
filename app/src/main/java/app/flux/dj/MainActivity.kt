@@ -59,10 +59,11 @@ class MainActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
         }
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            btPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
-        }
         controller.requestMicPermission = { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+        // Device names are only needed when the Outputs sheet is open, not at launch.
+        controller.requestBtPermission = {
+            if (Build.VERSION.SDK_INT >= 31) btPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        }
         setContent {
             FluxApp(
                 controller,

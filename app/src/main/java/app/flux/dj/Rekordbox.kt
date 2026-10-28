@@ -3,18 +3,20 @@ package app.flux.dj
 import app.flux.dj.audio.Keys
 import java.io.InputStream
 import java.text.Normalizer
-import javax.xml.parsers.DocumentBuilderFactory
+import java.util.Locale
 import org.w3c.dom.Element
 
 /** One track from a rekordbox collection.xml. Times are in seconds. */
 class RbTrack(
-    val id: String, val name: String, val artist: String, val genre: String, val totalSec: Int,
-    val bpm: Float, val key: Int, val fileStem: String, val rating: Int,
+    val id: String, val name: String, val artist: String, val totalSec: Int,
+    val bpm: Float, val key: Int, val fileStem: String,
     val tempoSecs: DoubleArray, val tempoBpms: DoubleArray, val firstBattito: Int,
     /** hot cues: slot (0..7) → start seconds */
     val hotCues: Map<Int, Double>,
     /** memory cues (start seconds), in order */
     val memoryCues: List<Double>,
+    /** hot-cue slots that appeared more than once in the export */
+    val duplicateCues: Int = 0,
 )
 
 /** A playlist with its folder path, e.g. ["Sets"] + "Set 1 Dance". */
@@ -22,21 +24,27 @@ class RbPlaylist(val folders: List<String>, val name: String, val trackIds: List
     val path: String get() = (folders + name).joinToString(" / ")
 }
 
-class RbLibrary(val tracks: Map<String, RbTrack>, val playlists: List<RbPlaylist>, val product: String)
+class RbLibrary(val tracks: Map<String, RbTrack>, val playlists: List<RbPlaylist>, val product: String,
+                 val duplicateTracks: Int = 0, val duplicateCues: Int = 0)
 
 object Rekordbox {
 
     fun parse(input: InputStream): RbLibrary {
-        val f = DocumentBuilderFactory.newInstance()
-        f.isNamespaceAware = false
-        val doc = f.newDocumentBuilder().parse(input)
+        val doc = Xml.parse(input)
         val root = doc.documentElement
         val prod = root.child("PRODUCT")?.let { "${it.getAttribute("Name")} ${it.getAttribute("Version")}" } ?: "rekordbox"
         val tracks = LinkedHashMap<String, RbTrack>()
-        root.child("COLLECTION")?.children("TRACK")?.forEach { t -> parseTrack(t)?.let { tracks[it.id] = it } }
+        var duplicateTracks = 0
+        var duplicateCues = 0
+        root.child("COLLECTION")?.children("TRACK")?.forEach { t ->
+            parseTrack(t)?.let { tr ->
+                if (tracks.put(tr.id, tr) != null) duplicateTracks++
+                duplicateCues += tr.duplicateCues
+            }
+        }
         val lists = ArrayList<RbPlaylist>()
         root.child("PLAYLISTS")?.child("NODE")?.let { walk(it, emptyList(), lists, isRoot = true) }
-        return RbLibrary(tracks, lists, prod)
+        return RbLibrary(tracks, lists, prod, duplicateTracks, duplicateCues)
     }
 
     private fun parseTrack(t: Element): RbTrack? {
@@ -46,22 +54,22 @@ object Rekordbox {
             if (s == null || b == null || b <= 0) null else Triple(s, b, e.getAttribute("Battito").toIntOrNull() ?: 1)
         }.sortedBy { it.first }
         val hot = HashMap<Int, Double>(); val mem = ArrayList<Double>()
+        var dupCues = 0
         t.children("POSITION_MARK").forEach { p ->
             val num = p.getAttribute("Num").toIntOrNull() ?: return@forEach
             val start = p.getAttribute("Start").toDoubleOrNull() ?: return@forEach
             val type = p.getAttribute("Type").toIntOrNull() ?: 0
             if (type != 0) return@forEach                     // loops etc.: positions only for now
-            if (num in 0..7) hot[num] = start else if (num < 0) mem.add(start)
+            if (num in 0..7) { if (hot.put(num, start) != null) dupCues++ } else if (num < 0) mem.add(start)
         }
         return RbTrack(
-            id, t.getAttribute("Name"), t.getAttribute("Artist"), t.getAttribute("Genre"),
+            id, t.getAttribute("Name"), t.getAttribute("Artist"),
             t.getAttribute("TotalTime").toIntOrNull() ?: 0,
             t.getAttribute("AverageBpm").toFloatOrNull() ?: 0f,
             parseKey(t.getAttribute("Tonality")),
             fileStem(t.getAttribute("Location")),
-            (t.getAttribute("Rating").toIntOrNull() ?: 0) / 51,   // 0,51,102,153,204,255 → 0..5 stars
             DoubleArray(tempos.size) { tempos[it].first }, DoubleArray(tempos.size) { tempos[it].second },
-            tempos.firstOrNull()?.third ?: 1, hot, mem.sorted(),
+            tempos.firstOrNull()?.third ?: 1, hot, mem.sorted(), dupCues,
         )
     }
 
@@ -86,7 +94,7 @@ object Rekordbox {
 
     /** Camelot ("9A", "11B") or classic ("Am", "F#m", "Db") → FLUX key (pc + 12 if minor), -1 if unknown. */
     fun parseKey(s: String): Int {
-        val k = s.trim()
+        val k = s.trim().replace('♯', '#').replace('♭', 'b')
         if (k.isEmpty()) return -1
         Regex("^(\\d{1,2})([ABab])$").find(k)?.let { m ->
             val num = m.groupValues[1].toInt(); val minor = m.groupValues[2].equals("A", true)
@@ -101,9 +109,12 @@ object Rekordbox {
 
     // ------------------------------------------------------------------------------------- matching
 
+    private val MARKS = Regex("\\p{M}+")
+    private val NON_ALNUM = Regex("[^a-z0-9]+")
+
     fun norm(s: String): String {
-        val n = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-        return n.replace("&", " and ").replace(Regex("[^a-z0-9]+"), " ").trim()
+        val n = Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD).replace(MARKS, "")
+        return n.replace("&", " and ").replace(NON_ALNUM, " ").trim()
     }
 
     class Candidate(val id: String, val title: String, val artist: String, val durSec: Int, val fileStem: String)
@@ -149,13 +160,15 @@ object Rekordbox {
             out[t.id] = hit.id; used.add(hit.id)
         }
         // pass 4: one title contains the other ("Stereo Love" ↔ "Stereo Love (Remastered Version)"),
-        // only with a near-identical length and a single candidate
+        // only with a near-identical length and a single candidate. Normalise each title once.
+        val candidateTitles = cands.associate { it.id to norm(it.title) }
         for (t in lib.tracks.values) {
             if (t.id in out || t.totalSec <= 0) continue
             val nt = norm(t.name); if (nt.length < 5) continue
             val hits = cands.filter { c ->
+                val ct = candidateTitles[c.id] ?: ""
                 c.id !in used && c.durSec > 0 && kotlin.math.abs(c.durSec - t.totalSec) <= 2 &&
-                    norm(c.title).let { ct -> ct.length >= 5 && (ct.contains(nt) || nt.contains(ct)) }
+                    ct.length >= 5 && (ct.contains(nt) || nt.contains(ct))
             }
             val hit = hits.singleOrNull() ?: continue
             out[t.id] = hit.id; used.add(hit.id)

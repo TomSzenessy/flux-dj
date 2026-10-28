@@ -14,7 +14,7 @@ state. There is no second process, no service and no native library.
 | UI | `app.flux.dj.ui` | Compose screens, Canvas instrument widgets, dialogs | `MainScreen` |
 | State | `app.flux.dj` | `Controller` (ViewModel): library, analysis cache, imports, suggestions, history, outputs, samples, grid edits | `Controller` |
 | Audio | `app.flux.dj.audio` | Mixer thread, decks, decoder, analyser, DSP, synth, microphone alignment | `Engine` |
-| Integrations | `app.flux.dj` | rekordbox XML, Plex/Drive clients, MediaStore indexing | `Rekordbox`, `Cloud`, `Controller` |
+| Integrations | `app.flux.dj` | rekordbox XML, Plex/Drive clients, MediaStore indexing, hardened XML and transport policy | `Rekordbox`, `Cloud`, `Xml`, `Http`, `Controller` |
 
 ## Seams
 
@@ -51,9 +51,16 @@ state. There is no second process, no service and no native library.
   `audio/` instead of branching inside the mixer loop.
 - Unit-testable logic stays out of Android framework classes; Android-specific
   decoding and audio output are adapted at the edge.
+- Untrusted XML goes through `Xml.parse` (no doctype/external entities) and
+  token-bearing HTTP through `Http` (https or a private host, same-host
+  redirects only); `collection.xml` and Plex responses are size-capped.
+- Credentials and library indexes are excluded from Android backup; release
+  identity and signing are supplied by the release environment, never a
+  per-run debug key.
 
 ## Verification
 
-`./gradlew :app:testDebugUnitTest` covers the audio core, rekordbox parsing,
-tempo maps and matching; `./gradlew :app:assembleDebug` proves the app builds.
+-`./gradlew :app:testDebugUnitTest` covers the audio core, rekordbox parsing,
+tempo maps, matching, DSP and transport policy; `:app:lintDebug` is a blocking
+gate; `:app:assembleDebug`/`:app:assembleRelease` prove both builds.
 The on-device session on the Xiaomi Pad 5 is the integration oracle.
