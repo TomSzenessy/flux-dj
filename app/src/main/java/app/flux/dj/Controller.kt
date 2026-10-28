@@ -52,7 +52,6 @@ class DeckUi {
     var bpm by mutableStateOf("–")
     var pct by mutableStateOf("")
     var keyText by mutableStateOf("")
-    var keyColorIdx by mutableIntStateOf(-1)
     var time by mutableStateOf("00:00.0")
     var remain by mutableStateOf("-00:00")
     var playing by mutableStateOf(false)
@@ -168,7 +167,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var leader by mutableIntStateOf(0)
     var recording by mutableStateOf(false)
     var recSeconds by mutableIntStateOf(0)
-    var recSaved by mutableStateOf<String?>(null)
     var recSaving by mutableStateOf(false)
     var fxOn by mutableStateOf(false)
     var fxType by mutableStateOf(BeatFx.ECHO)
@@ -195,7 +193,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var offsetMs by mutableIntStateOf(0)
     var devices by mutableStateOf<List<DeviceOpt>>(emptyList())
     var outputLabel by mutableStateOf("Speaker")
-    var outputWarn by mutableStateOf<String?>(null)
 
     // library
     val demos = DemoTracks.specs.mapIndexed { i, s -> LibItem(s.id, s.title, s.artist, 0, null, i, s.bpm, s.rootPc + if (s.minor) 12 else 0, sourceKind = "demo") }
@@ -256,12 +253,20 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private val loggedLoad = intArrayOf(-1, -1)   // load generation already logged per deck
     private var lastPollNs = 0L
     private var indexJob: Job? = null
+    private val libraryGen = java.util.concurrent.atomic.AtomicInteger(0)
+    private val scanGen = java.util.concurrent.atomic.AtomicInteger(0)
+    private val plexGen = java.util.concurrent.atomic.AtomicInteger(0)
     private val indexDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "flux-index").apply { priority = Thread.MIN_PRIORITY } }.asCoroutineDispatcher()
 
     private val demoCache = HashMap<Int, Track>()
     private val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var lastTenths = longArrayOf(-1, -1)
     private var lastRemain = intArrayOf(-1, -1)
+    private val lastRatio = DoubleArray(2) { Double.NaN }
+    private val lastShownBpm = FloatArray(2) { Float.NaN }
+    private val lastBarText = arrayOfNulls<String>(2)
+    private var lastMasterText = ""
+    private var nextJob: Job? = null
 
 
     // ------------------------------------------------------------------ per-frame
@@ -289,9 +294,12 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 // stable (dominant) tempo for the big number so the master deck does not appear to
                 // drift while the other deck is synced; the grid still follows the map internally.
                 val shownBpm = if (t.variable) t.bpm else here
-                u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm * ratio) else if (u.analysing) "···" else "–"
-                u.origBpm = if (t.bpm > 0) String.format("%.1f", shownBpm) else ""
-                u.pct = if (t.bpm > 0 || true) String.format("%+.1f%%", (ratio - 1.0) * 100) else ""
+                if (ratio != lastRatio[i] || shownBpm != lastShownBpm[i] || u.analysing) {
+                    lastRatio[i] = ratio; lastShownBpm[i] = shownBpm
+                    u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm * ratio) else if (u.analysing) "···" else "–"
+                    u.origBpm = if (t.bpm > 0) String.format("%.1f", shownBpm) else ""
+                    u.pct = if (t.bpm > 0) String.format("%+.1f%%", (ratio - 1.0) * 100) else ""
+                }
                 if (d.syncOn && tick.longValue % 75L == 0L) {
                     android.util.Log.i("FLUX-SYNC", "deck ${deckName(i)} ‘${t.title}’ sync=${d.syncOn} ratio=${d.effRatio} " +
                         "syncRatio=${d.syncRatio} refMaster=${d.syncRefMaster} refBpm=${d.syncRefBpm} tempo=${d.tempo} range=${d.range} " +
@@ -306,21 +314,27 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 }
                 val rem = (t.durationSec - sec).toInt()
                 if (rem != lastRemain[i]) { lastRemain[i] = rem; u.remain = "-" + fmtTime(rem.toDouble(), false) }
-                val cs = List(8) { d.hotCues[it] >= 0 }
-                if (cs != u.cues) u.cues = cs
+                var cuesChanged = false
+                if (d.hotCueRev != lastCueRev[i]) {
+                    lastCueRev[i] = d.hotCueRev
+                    cuesChanged = true
+                    val cs = List(8) { d.hotCues[it] >= 0 }
+                    if (cs != u.cues) u.cues = cs
+                }
                 if (t.bpm > 0) {
                     val bi = Math.floor(t.beatIndex(vp)).toLong()
                     if (bi >= 0) {
                         val bar = bi / 4 + 1
                         u.beat = (bi % 4).toInt() + 1
                         val toPhrase = (16 - ((bar - 1) % 16)).toInt()
-                        u.barText = "BAR $bar · ${toPhrase} to phrase"
+                        val text = "BAR $bar · $toPhrase to phrase"
+                        if (lastBarText[i] != text) { lastBarText[i] = text; u.barText = text }
                         u.phraseSoon = toPhrase <= 2
-                    } else { u.beat = 0; u.barText = "" }
+                    } else if (lastBarText[i] != "") { lastBarText[i] = ""; u.beat = 0; u.barText = "" }
                 }
-                // persist cues whenever they change
-                if (!restoring[i] && u.loaded && (d.hotCueRev != lastCueRev[i] || d.cue != lastCue[i])) {
-                    lastCueRev[i] = d.hotCueRev; lastCue[i] = d.cue
+                // persist cues whenever they change (lastCueRev was updated above)
+                if (!restoring[i] && u.loaded && (cuesChanged || d.cue != lastCue[i])) {
+                    lastCue[i] = d.cue
                     saveCues(t.id, d)
                 }
             }
@@ -363,7 +377,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
         transitionProgress = engine.transitionProgress
         leader = engine.leader()
         val mb = engine.masterBpm()
-        masterBpm = if (mb > 0) String.format("%.1f", mb) else "–"
+        val masterText = if (mb > 0) String.format("%.1f", mb) else "–"
+        if (masterText != lastMasterText) { lastMasterText = masterText; masterBpm = masterText }
         val wasSaving = recSaving
         recording = engine.recorder.active
         recSaving = engine.recorder.saving
@@ -372,7 +387,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
             val f = engine.recorder.lastFile
             val err = engine.recorder.error
             val drops = engine.recorder.dropped
-            recSaved = f
             toast = when {
                 f != null && drops > 0 -> "Saved $f · $drops block(s) dropped"
                 f != null -> "Saved $f"
@@ -381,7 +395,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
         if (engine.clip) { clip = true; engine.clip = false } else if (clip && tick.longValue % 90L == 0L) clip = false
         updateMatch()
-        if (tick.longValue % 75L == 0L) refreshNext()
+        if (tick.longValue % 75L == 0L) scheduleNext()
     }
 
     private fun updateMatch() {
@@ -394,7 +408,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
             val kTxt = when (kd) { 0 -> "perfect key"; 1 -> "harmonic"; 2 -> "energy lift"; 9 -> "key clash"; else -> "" }
             u.matchGood = kd in 0..2
             u.match = if (i == 1 || true) kTxt else ""
-            u.keyColorIdx = kd
         }
     }
 
@@ -435,7 +448,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
         quantize = !quantize; engine.decks.forEach { it.quantize = quantize }
         toast = if (quantize) "Snap ON — cues, loops and jumps land exactly on the beat" else "Snap OFF — cues and loops land exactly where you tap"
     }
-    fun setKeyShift(i: Int, s: Int) { deck(i).keyShift = s }
 
     // ---------------------------------------------------------- performance inputs
     /**
@@ -504,7 +516,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun toggleRecord() {
         val r = engine.recorder
         if (r.active) { r.stop(); toast = "Saving the recording…" }
-        else if (!r.saving) { r.start(); recSaved = null; toast = "Recording the master mix" }
     }
 
     // ------------------------------------------------------------------ outputs
@@ -614,10 +625,20 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun doCueDev(key: String) { cueDev = key; applyOutputConfig(true) }
     /** Extra fine-tune on top of the measured output delay (ms). */
     var visualTrimMs by mutableIntStateOf(sp.getInt("visual_trim", 0))
-    fun setVisualTrim(ms: Int) { visualTrimMs = ms.coerceIn(-300, 500); sp.edit().putInt("visual_trim", visualTrimMs).apply() }
+    private var trimSave: Job? = null
+    fun setVisualTrim(ms: Int) {
+        visualTrimMs = ms.coerceIn(-300, 500)
+        trimSave?.cancel()
+        trimSave = viewModelScope.launch { delay(450); sp.edit().putInt("visual_trim", visualTrimMs).apply() }
+    }
     var latencyMs by mutableIntStateOf(0)
     var outVolume by mutableFloatStateOf(sp.getFloat("out_volume", 1f))
-    fun doOutVolume(v: Float) { outVolume = v; engine.outVolume = v; sp.edit().putFloat("out_volume", v).apply() }
+    private var volumeSave: Job? = null
+    fun doOutVolume(v: Float) {
+        outVolume = v; engine.outVolume = v
+        volumeSave?.cancel()
+        volumeSave = viewModelScope.launch { delay(450); sp.edit().putFloat("out_volume", outVolume).apply() }
+    }
 
     /**
      * The playhead you *hear*: the engine is ahead of the speaker by the output delay, so everything
@@ -654,9 +675,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
 
     /** Finish a held needle-search at the visual position; skip the in-flight output delay. */
-    fun releaseSearch(i: Int) {
-        releaseSearchAt(i, engine.decks[i].pos)
-    }
 
     /** Tap-to-jump. The visual position is authoritative; skip the in-flight output delay. */
     fun jumpAudible(i: Int, target: Double) {
@@ -725,6 +743,15 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var micGranted by mutableStateOf(MicAlign.hasPermission(app))
     /** Set by MainActivity so the align sheet can ask for RECORD_AUDIO. */
     var requestMicPermission: (() -> Unit)? = null
+    /** Set by MainActivity; requested only when the Outputs sheet needs device names. */
+    var requestBtPermission: (() -> Unit)? = null
+
+    fun ensureBtPermission() {
+        if (Build.VERSION.SDK_INT < 31) return
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            requestBtPermission?.invoke()
+        }
+    }
 
     fun beginAutoAlign() {
         // measure from a clean slate: no old delay, no fine-tune
@@ -821,20 +848,19 @@ class Controller(app: Application) : AndroidViewModel(app) {
         timingMeasured = true
     }
 
-    fun resetAutoAlign() { beginAutoAlign() }
     fun finishMasterOnly() { autoCueMs = -1f; doneAutoAlign() }
-    fun clearAcousticLatency() {
-        engine.acousticMasterMs = -1f; timingMeasured = false
-        sp.edit().remove("acoustic_master_ms").remove("acoustic_key").apply()
-        toast = "Picture timing back to the device estimate"
-    }
     fun resetTiming() {
         setOffset(0); setVisualTrim(0); engine.acousticMasterMs = -1f; timingMeasured = false
         sp.edit().remove("acoustic_master_ms").remove("acoustic_key").apply()
         toast = "Timing reset — room, headphones and picture use the device delay again"
     }
 
-    fun setOffset(ms: Int) { offsetMs = ms; engine.offsetMs = ms; sp.edit().putInt("out_offset", ms).apply() }
+    private var offsetSave: Job? = null
+    fun setOffset(ms: Int) {
+        offsetMs = ms; engine.offsetMs = ms
+        offsetSave?.cancel()
+        offsetSave = viewModelScope.launch { delay(450); sp.edit().putInt("out_offset", offsetMs).apply() }
+    }
 
     /** key -> "N beeps → routed to X" from the last output test. */
     var testResults by mutableStateOf<Map<String, String>>(emptyMap())
@@ -889,6 +915,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         else ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         libPermission = ok
         if (!ok) return
+        val gen = libraryGen.incrementAndGet()
         viewModelScope.launch(Dispatchers.IO) {
             val out = ArrayList<LibItem>()
             try {
@@ -905,6 +932,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } catch (_: Exception) {}
+            if (!isActive || libraryGen.get() != gen) return@launch
             withContext(Dispatchers.Main) { deviceTracks = out; libRev++; rbRematch(); startIndexing() }
         }
     }
@@ -1113,6 +1141,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ decoded-audio disk cache (LRU)
     private fun md5(id: String) = java.security.MessageDigest.getInstance("MD5").digest(id.toByteArray()).joinToString("") { "%02x".format(it) }
+    private val MAX_XML_BYTES = 32L * 1024 * 1024
+
     private val pcmDir by lazy { java.io.File(ctx.cacheDir, "pcm").apply { mkdirs() } }
     private val remoteDir by lazy { java.io.File(ctx.cacheDir, "remote").apply { mkdirs() } }
     var pcmCacheMb by mutableIntStateOf(sp.getInt("pcm_cache_mb", 3072))
@@ -1153,8 +1183,17 @@ class Controller(app: Application) : AndroidViewModel(app) {
         for (x in files) { total += x.length(); if (total > remoteCap) x.delete() }
     }
 
-    /** True when the track can play without the network (Plex original cached, PCM cached, or local). */
+    private val cachedMemo = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private var cachedMemoRev = -1
+
+    /** Memoised per library revision: composition must not stat the same files every frame. */
     fun isCached(item: LibItem): Boolean {
+        if (cachedMemoRev != libRev) { cachedMemo.clear(); cachedMemoRev = libRev }
+        return cachedMemo.getOrPut(item.id) { isCachedNow(item) }
+    }
+
+    /** True when the track can play without the network (Plex original cached, PCM cached, or local). */
+    private fun isCachedNow(item: LibItem): Boolean {
         if (item.demo >= 0) return true
         val pcm = pcmFile(item.id)
         if (pcm.exists()) {
@@ -1204,21 +1243,34 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val ok = remoteOk(f)
         val tmp = java.io.File(remoteDir, f.name + ".tmp")
         return try {
+            Http.requireSafe(u.toString())
             val c = java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection
             c.connectTimeout = 15_000; c.readTimeout = 30_000
-            c.instanceFollowRedirects = true
+            c.instanceFollowRedirects = false
             c.setRequestProperty("Accept-Encoding", "identity")
             item.streamHeaders.forEach { (k, v) -> c.setRequestProperty(k, v) }
-            if (c.responseCode !in 200..299) return false
+            if (c.responseCode !in 200..299) { c.disconnect(); return false }
             val expected = c.contentLengthLong
-            c.inputStream.use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
+            if (expected > remoteCap) { c.disconnect(); return false }
+            var written = 0L
+            c.inputStream.use { inp -> tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = inp.read(buf)
+                    if (n < 0) break
+                    written += n
+                    if (written > remoteCap) throw java.io.IOException("download exceeds the cache size")
+                    out.write(buf, 0, n)
+                }
+            } }
+            c.disconnect()
             if (expected > 0 && tmp.length() != expected) {
                 android.util.Log.w("FLUX-CACHE", "partial download ${item.title}: ${tmp.length()} / $expected")
                 tmp.delete(); return false
             }
             if (tmp.length() <= 4096) { tmp.delete(); return false }
             if (f.exists()) f.delete()
-            tmp.renameTo(f)
+            if (!tmp.renameTo(f)) { tmp.delete(); return false }
             ok.writeText(f.length().toString())
             android.util.Log.i("FLUX-CACHE", "saved ${item.title} (${f.length() / 1024} KB)")
             withContext(Dispatchers.Main) { libRev++ }
@@ -1331,7 +1383,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
                         i += m
                     }
                 }
-                tmp.renameTo(f)
+                if (!tmp.renameTo(f)) { tmp.delete(); return@launch }
                 // evict least-recently-used beyond the cap
                 val files = pcmDir.listFiles { x -> x.name.endsWith(".pcm") }?.sortedByDescending { it.lastModified() } ?: return@launch
                 var total = 0L
@@ -1427,7 +1479,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopPreview() { engine.stopPreview(); previewId = null; previewLoading = false }
+    fun stopPreview() {
+        engine.stopPreview(); previewId = null; previewLoading = false
+        previewCache = null   // release a full decoded track as soon as the preview ends
+    }
     fun seekPreview(f: Float) = engine.previewSeek(f)
     fun previewTrack(): Track? = engine.previewTrack
 
@@ -1463,7 +1518,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 val p = l.split("\t")
                 if (p.size < 6) null else HistEntry(p[0].toLong(), p[1].toInt(), p[2], p[3], p[4].toFloatOrNull() ?: 0f, p[5].toIntOrNull() ?: -1)
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (_: Exception) {
+            try { historyFile.renameTo(java.io.File(historyFile.parentFile, historyFile.name + ".bad")) } catch (_: Exception) {}
+            emptyList()
+        }
     }
 
     /** Sessions = runs of entries without a 90-minute gap, newest session first. */
@@ -1564,7 +1622,16 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private fun indexOne(it: LibItem) {
         // whole track, once: afterwards it loads with waveform, grid, key and gain ready instantly
         val t = Decoder.decode(ctx, it.uri!!, it.id, it.title, it.artist, headers = it.streamHeaders)
-        if (t == null) { it.energy = -1; cache.edit().putString(it.id, "0|-1|-1.0|-1|-|-").apply(); return }
+        if (t == null) {
+            // Retry a failed file a bounded number of times instead of re-decoding it forever.
+            val fails = cache.getInt("fail:${it.id}", 0) + 1
+            val done = fails >= 3
+            it.energy = if (done) -1 else 0
+            cache.edit().putInt("fail:${it.id}", fails)
+                .putString(it.id, "0|-1|-1.0|${if (done) -1 else 0}|-|-|$metaVersion").apply()
+            return
+        }
+        cache.edit().remove("fail:${it.id}").apply()
         Analyzer.waveform(t); saveWave(t, t.gain)
         val prot = metaParts(it.id)?.takeIf { p -> protectedMeta(p) }
         if (prot != null) {
@@ -1632,7 +1699,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
         return parts.joinToString(" · ")
     }
 
-    private fun allItems(): List<LibItem> = demos + imported + plexItems + deviceTracks
+    private fun allItems(): List<LibItem> =
+        (demos + imported + plexItems + deviceTracks).distinctBy { it.id }
     /** Everything the user hasn't removed from the library. */
     private fun visibleItems(): List<LibItem> = allItems().filter { it.id !in hidden }
     val hiddenCount: Int get() = allItems().count { it.id in hidden }
@@ -1672,12 +1740,26 @@ class Controller(app: Application) : AndroidViewModel(app) {
         else -> 1 - engine.leader()
     }
 
-    private fun refreshNext() {
+    /**
+     * Ranking the whole library is O(n log n); it must never run in the 75 Hz poll on the main
+     * thread. Coalesce requests and publish only a result that still matches the library revision.
+     */
+    private fun scheduleNext() {
+        if (nextJob?.isActive == true) return
         val tgt = idleDeck()
-        val r = refMeta(tgt)
-        val s = if (r == null) null else suggestions(tgt, 6).firstOrNull { filterSource == null || sourceOf(it) == filterSource }
-        nextSuggestion = s; nextReason = if (s != null && r != null) reasons(s, r) else ""
+        val r = refMeta(tgt) ?: run { nextSuggestion = null; nextReason = ""; return }
+        val src = filterSource
+        val rev = libRev
+        nextJob = viewModelScope.launch(Dispatchers.Default) {
+            val s = suggestions(tgt, 6).firstOrNull { src == null || sourceOf(it) == src }
+            val reason = if (s != null) reasons(s, r) else ""
+            withContext(Dispatchers.Main) {
+                if (rev == libRev) { nextSuggestion = s; nextReason = reason }
+            }
+        }
     }
+
+
 
     fun loadNext() { nextSuggestion?.let { load(idleDeck(), it) } }
 
@@ -1701,13 +1783,19 @@ class Controller(app: Application) : AndroidViewModel(app) {
         return when (sortMode) {
             7 -> list                                   // playlist order
             1 -> list.sortedByDescending { it.added }
-            2 -> list.sortedBy { it.title.lowercase() }
-            3 -> list.sortedWith(compareBy({ it.artist.ifEmpty { "\uFFFF" }.lowercase() }, { it.title.lowercase() }))
+            2 -> list.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+            3 -> list.sortedWith(compareBy({ it.artist.ifEmpty { "\uFFFF" }.lowercase(java.util.Locale.ROOT) }, { it.title.lowercase(java.util.Locale.ROOT) }))
             4 -> list.sortedBy { if (it.bpm <= 0) 999f else it.bpm }
             5 -> list.sortedBy { if (it.key < 0) 99 else (Keys.camelot(it.key).dropLast(1).toInt() * 2 + (if (it.key >= 12) 0 else 1)) }
             6 -> list.sortedByDescending { it.energy }
             // already on a deck → bottom; the rest by how well it follows the other deck
-            else -> if (ref != null) { val loaded = loadedIds(); list.sortedWith(compareBy({ it.id in loaded }, { relevance(it, ref) ?: 500f })) } else list.sortedByDescending { it.added }
+            else -> if (ref != null) {
+                // decorate once: relevance() is O(1) but the comparator runs O(n log n) times
+                val loaded = loadedIds()
+                list.map { it to (relevance(it, ref) ?: 500f) }
+                    .sortedWith(compareBy({ it.first.id in loaded }, { it.second }))
+                    .map { it.first }
+            } else list.sortedByDescending { it.added }
         }
     }
 
@@ -1769,6 +1857,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnectCloudFolder() {
+        scanGen.incrementAndGet()
         cloudFolder = ""; cloudFolderName = ""
         sp.edit().remove("cloud_tree").remove("cloud_tree_name").apply()
         imported = imported.filter { it.sourceKind != "drive" }
@@ -1793,6 +1882,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     private fun scanFolder(tree: Uri, cloud: Boolean, announce: Boolean) {
         if (cloud && cloudScanning) return
+        val scan = scanGen.incrementAndGet()
         if (cloud) cloudScanning = true
         viewModelScope.launch(Dispatchers.IO) {
             val found = ArrayList<Pair<Uri, String>>()
@@ -1805,8 +1895,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
                         while (c.moveToNext()) {
                             val id = c.getString(0); val name = c.getString(1) ?: "Track"; val mime = c.getString(2) ?: ""
                             if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) walk(id)
-                            else if (mime.startsWith("audio/") || AUDIO_EXT.any { name.lowercase().endsWith(it) }) found.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id) to name.substringBeforeLast('.'))
-                            else if (name.equals("collection.xml", true) || name.lowercase().endsWith(".xml") && name.lowercase().contains("collection")) {
+                            else if (mime.startsWith("audio/") || AUDIO_EXT.any { name.lowercase(java.util.Locale.ROOT).endsWith(it) }) found.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id) to name.substringBeforeLast('.'))
+                            else if (name.equals("collection.xml", true) || name.lowercase(java.util.Locale.ROOT).endsWith(".xml") && name.lowercase(java.util.Locale.ROOT).contains("collection")) {
                                 xmlUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id)
                             }
                         }
@@ -1819,7 +1909,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
             var lib: RbLibrary? = null
             xmlUri?.let { lib = readRekordbox(it) }
 
+            if (scanGen.get() != scan) return@launch
             withContext(Dispatchers.Main) {
+                if (scanGen.get() != scan) return@withContext
                 if (cloud) cloudScanning = false
                 if (lib != null && lib!!.tracks.isNotEmpty()) {
                     rbSource = if (cloud) "$cloudFolderName / collection.xml" else displayName(xmlUri!!) + ".xml"
@@ -1901,6 +1993,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
                     withContext(Dispatchers.Main) {
                         plexToken = token; sp.edit().putString("plex_token", token).apply()
                         plexPinCode = null; plexPinExpiresAt = 0L
+                        plexBusy = false
                         plexStatus = "Signed in — finding your server…"
                         plexRefresh()
                     }
@@ -1923,6 +2016,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     /** Pull every music library from the Plex server and make the tracks streamable in FLUX. */
     fun plexRefresh() {
         if (plexToken.isBlank()) { plexSignIn(); return }
+        if (plexBusy) return
+        val gen = plexGen.incrementAndGet()
         plexBusy = true; plexError = null; plexStatus = "Syncing Plex…"
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1948,7 +2043,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 }
                 plexAllCache = all
                 val filtered = filterPlex(all)
+                if (plexGen.get() != gen) return@launch
                 withContext(Dispatchers.Main) {
+                    if (plexGen.get() != gen) return@withContext
                     plexItems = filtered
                     plexBusy = false
                     plexStatus = "$name · ${filtered.size} of ${all.size} tracks"
@@ -1997,6 +2094,14 @@ class Controller(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Close the sign-in sheet: stop polling so no orphan PIN refresh continues in the background. */
+    fun stopPlexSignIn() {
+        if (plexToken.isBlank()) {
+            plexPoll?.cancel(); plexPoll = null
+            plexBusy = false; plexPinCode = null; plexPinExpiresAt = 0L; plexStatus = ""
+        }
+    }
+
     fun plexSignOut() {
         bulkJob?.cancel(); bulkDownloading = false
         plexPoll?.cancel(); plexPoll = null
@@ -2035,7 +2140,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private val rbFile by lazy { java.io.File(ctx.filesDir, "rekordbox.xml") }
     private var rbImportTime: Long = sp.getLong("rb_import_time", 0L)
 
-    class RbReport(val total: Int, val matched: Int, val playlists: Int, val variable: Int, val hotCues: Int, val missing: List<String>)
+    class RbReport(val total: Int, val matched: Int, val playlists: Int, val variable: Int, val hotCues: Int, val missing: List<String>,
+               val duplicateTracks: Int = 0, val duplicateCues: Int = 0)
 
     fun selectPlaylist(p: RbPlaylist?) { playlist = p; sortMode = if (p != null) 7 else 0; libRev++ }
     fun playlistOnTablet(p: RbPlaylist): Int = p.trackIds.count { rbMatch[it]?.let { id -> id !in hidden } == true }
@@ -2064,8 +2170,23 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     /** Copy + parse a collection.xml from any document provider, without touching UI state. */
     private fun readRekordbox(uri: Uri): RbLibrary? = try {
-        ctx.contentResolver.openInputStream(uri)!!.use { inp -> rbFile.outputStream().use { inp.copyTo(it) } }
-        rbFile.inputStream().use { Rekordbox.parse(it) }
+        val tmp = java.io.File(rbFile.parentFile, rbFile.name + ".tmp")
+        ctx.contentResolver.openInputStream(uri)!!.use { inp ->
+            tmp.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = inp.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > MAX_XML_BYTES) throw java.io.IOException("collection.xml is too large")
+                    out.write(buf, 0, n)
+                }
+            }
+        }
+        val lib = tmp.inputStream().use { Rekordbox.parse(it) }
+        if (lib.tracks.isEmpty()) { tmp.delete(); null }
+        else { if (rbFile.exists()) rbFile.delete(); tmp.renameTo(rbFile); lib }
     } catch (_: Exception) { null }
 
     private fun applyRbLibrary(lib: RbLibrary) {
@@ -2076,7 +2197,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
         val missing = lib.tracks.values.filter { it.id !in rbMatch }.map { t -> if (t.artist.isNotEmpty()) "${t.artist} – ${t.name}" else t.name }
         rbReport = RbReport(lib.tracks.size, rbMatch.size, lib.playlists.size,
             lib.tracks.values.count { t -> t.id in rbMatch && t.tempoBpms.toSet().size > 1 },
-            lib.tracks.values.filter { it.id in rbMatch }.sumOf { it.hotCues.size }, missing)
+            lib.tracks.values.filter { it.id in rbMatch }.sumOf { it.hotCues.size }, missing,
+            lib.duplicateTracks, lib.duplicateCues)
     }
 
     fun removeRekordbox() {
@@ -2139,8 +2261,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
             cache.edit().putString(item.id, old.toMutableList().also { it[1] = "${r.key}" }.joinToString("|")).apply()
             item.key = r.key
         }
-        // cues: rekordbox hot cues replace FLUX's (main cue = first memory cue, else beat 1)
-        if (r.hotCues.isNotEmpty() || r.memoryCues.isNotEmpty()) {
+        // Cues: rekordbox fills an untouched track, but a hand-edited grid is treated as the
+        // user's own edit and keeps their cues too. Main cue = first memory cue, else beat 1.
+        if (!handEdited && (r.hotCues.isNotEmpty() || r.memoryCues.isNotEmpty())) {
             val main = r.memoryCues.firstOrNull()?.times(SR) ?: (if (t.bpm > 0) t.beatPos(0.0).coerceAtLeast(0.0) else 0.0)
             val slots = (0 until 8).map { k -> r.hotCues[k]?.times(SR) ?: -1.0 }
             cache.edit().putString("cues:${item.id}", (listOf(main) + slots).joinToString(",")).apply()
@@ -2151,7 +2274,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
             val d = engine.decks[i]; val lt = d.track ?: continue
             if (lt.id != item.id) continue
             cache.getString(item.id, null)?.split("|")?.let { p ->
-                lt.bpm = p[0].toFloat(); lt.key = p[1].toInt(); lt.firstBeat = p[2].toDouble()
+                lt.bpm = p[0].toFloat(); lt.key = p[1].toInt()
+                p.getOrNull(2)?.toDoubleOrNull()?.takeIf { it >= 0 }?.let { lt.firstBeat = it }
                 val map = cache.getString("tmap:${item.id}", null)
                 if (map != null) lt.applyTempoMapString(map) else lt.clearTempoMap()
             }
@@ -2364,9 +2488,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
         refreshGridText(i)
     }
 
-    /** Library ranking relative to a reference track (what's on the other deck). */
-    fun reference(forDeck: Int): Track? = engine.decks[1 - forDeck].track
-
     // Startup runs last so every property above is initialised before background work touches it.
     init {
         engine.outVolume = outVolume
@@ -2376,6 +2497,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
             visualTrimMs = 0
             sp.edit().putInt("visual_trim", 0).putBoolean("timing_v2", true).apply()
         }
+        outMode = OutMode.entries[sp.getInt("out_mode", 0).coerceIn(0, 2)]
+        offsetMs = sp.getInt("out_offset", 0)
         if (!sp.getBoolean("timing_v3", false)) {
             // Cap legacy alignment offsets (the old renderer made users push them to 250–450 ms)
             // and drop the old acoustic measurement made against the oversized buffer.
@@ -2384,8 +2507,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 .putBoolean("timing_v3", true).apply()
             engine.acousticMasterMs = -1f; timingMeasured = false
         }
-        outMode = OutMode.entries[sp.getInt("out_mode", 0).coerceIn(0, 2)]
-        offsetMs = sp.getInt("out_offset", 0)
         if (!sp.getBoolean("timing_v4", false)) {
             if (offsetMs > 0) setOffset(0)
             else if (offsetMs < -120) setOffset(-120)
@@ -2419,6 +2540,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         try { am.unregisterAudioDeviceCallback(deviceCallback) } catch (_: Exception) {}
+        plexPoll?.cancel(); bulkJob?.cancel(); indexJob?.cancel()
+        try { indexDispatcher.close() } catch (_: Exception) {}
         engine.stop(); super.onCleared()
     }
 }

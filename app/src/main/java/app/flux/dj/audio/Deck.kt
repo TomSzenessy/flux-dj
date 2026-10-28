@@ -46,8 +46,6 @@ class Deck(val index: Int) {
     val hotCues = DoubleArray(8) { -1.0 }
     @Volatile var hotCueRev = 0              // bumps on change (UI refresh)
     @Volatile var quantize = true
-    /** Set when a seek/hot-cue/loop jump is applied; sync holds its ratio briefly so the fader doesn't twitch. */
-    @Volatile var lastSeekNs = 0L
     /** When the current jump/seek/play started; the eye ramps its output delay in over this period. */
     @Volatile var rampNs = 0L
     /** While >= 0, the picture holds here until the engine has moved one output delay ahead. */
@@ -61,7 +59,6 @@ class Deck(val index: Int) {
     private var slipActive = false
     private var previewReturn = 0.0
     private var rate = 0.0
-    private var wasScratch = false
 
     // granular engine
     private val G = 2048
@@ -148,7 +145,6 @@ class Deck(val index: Int) {
     fun jumpTo(p: Double) {
         seek(p)
     }
-    fun seekFrac(f: Float) { val t = track ?: return; seek(f.coerceIn(0f, 1f) * t.frames.toDouble()) }
 
     fun play() {
         if (track == null) return
@@ -169,7 +165,6 @@ class Deck(val index: Int) {
         rampNs = 0L
         visualHoldPos = -1.0
     }
-    fun togglePlay() { if (playing) pause() else play() }
 
     fun cueDown(at: Double = pos) {
         if (track == null) return
@@ -203,7 +198,6 @@ class Deck(val index: Int) {
     fun hotCueUp(i: Int) {}
     fun hotCueClear(i: Int) { hotCues[i] = -1.0; hotCueRev++ }
 
-    fun beatJump(beats: Float, from: Double = pos) { seek(beatsFrom(from, beats.toDouble())) }
 
     /**
      * Start a loop at the beat nearest [at] — pass the position the user actually hears/sees, not the
@@ -275,7 +269,6 @@ class Deck(val index: Int) {
             pos = java.lang.Double.longBitsToDouble(req).coerceIn(0.0, lastIdx.toDouble())
             resetGrains = true
             rate = if (playing) rate else 0.0
-            lastSeekNs = System.nanoTime()
             rampNs = if (noRampSeek) 0L else System.nanoTime()
             noRampSeek = false
         }
@@ -356,7 +349,6 @@ class Deck(val index: Int) {
             val a = abs(l); if (a > lvl) lvl = a
         }
         // slip ghost advances with real time while looping / scratching
-        wasScratch = scr
         rate = r
         pos = posD
         level = lvl * (1f / 32768f)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Never back up the Plex token, library indexes, or set history. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="flux.xml" />
+    <exclude domain="file" path="plex.tsv" />
+    <exclude domain="file" path="rekordbox.xml" />
+    <exclude domain="file" path="history.tsv" />
+</full-backup-content>

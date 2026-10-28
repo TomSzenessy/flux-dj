@@ -52,7 +52,8 @@ fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp 
     AnimatedVisibility(visible, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
             Column(
-                Modifier.width(width).fillMaxHeight().clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp)).background(Color(0xFF0C0E14))
+                Modifier.widthIn(max = width).fillMaxWidth(0.94f).fillMaxHeight()
+                    .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp)).background(Color(0xFF0C0E14))
                     .border(1.dp, C.line, RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(16.dp),
@@ -73,10 +74,10 @@ fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp 
 // ----------------------------------------------------------------------------- Library
 
 @Composable
-private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, color: Color = C.ok, onPick: (Int) -> Unit) {
+private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, onPick: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label.uppercase(), style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.width(52.dp))
-        opts.forEachIndexed { i, (t, on) -> Chip(t, on, color, Modifier.height(28.dp)) { onPick(i) } }
+        opts.forEachIndexed { i, (t, on) -> Chip(t, on, C.ok, Modifier.height(28.dp)) { onPick(i) } }
     }
 }
 
@@ -508,7 +509,7 @@ fun FxPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
 @Composable
 fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
     SidePanel(visible, onDismiss, "Audio output", 460.dp) {
-        LaunchedEffect(visible) { if (visible) c.refreshDevices() }
+        LaunchedEffect(visible) { if (visible) { c.refreshDevices(); c.ensureBtPermission() } }
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ModeCard("Single output", "Everything to one device. Switch a CUE on to practise privately — the output then plays only the cued decks.", c.outMode == OutMode.SINGLE) { c.doOutMode(OutMode.SINGLE) }
             if (c.dualPossible || c.outMode == OutMode.DUAL)

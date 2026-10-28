@@ -135,7 +135,7 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
                 MODES.forEachIndexed { k, name ->
                     val on = u.padMode == k
                     Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(if (on) C.s4 else Color.Transparent)
-                        .pointerInputTap { u.padMode = k }, contentAlignment = Alignment.Center) {
+                        .pointerInput2 { u.padMode = k }, contentAlignment = Alignment.Center) {
                         Text(name, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.sp, color = if (on) col else C.mu, fontWeight = FontWeight.Bold), maxLines = 1, softWrap = false)
                     }
                 }
@@ -156,10 +156,6 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
         }
     }
 }
-
-private fun Modifier.pointerInputTap(onTap: () -> Unit): Modifier = this.then(
-    Modifier.pointerInput2(onTap)
-)
 
 @Composable
 private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
