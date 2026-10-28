@@ -65,7 +65,7 @@ fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp 
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = T.tab.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
-                    Box(Modifier.size(32.dp).clip(RoundedCornerShape(16.dp)).background(C.s3).pointerInput2 { onDismiss() }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(24.dp)).background(C.s3).pointerInput2 { onDismiss() }, contentAlignment = Alignment.Center) {
                         Text("✕", style = T.tab.copy(color = C.mu, fontSize = 14.sp))
                     }
                 }
@@ -81,7 +81,7 @@ fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp 
 private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, onPick: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label.uppercase(), style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.width(52.dp))
-        opts.forEachIndexed { i, (t, on) -> Chip(t, on, C.ok, Modifier.height(28.dp)) { onPick(i) } }
+        opts.forEachIndexed { i, (t, on) -> Chip(t, on, C.ok, Modifier.height(48.dp)) { onPick(i) } }
     }
 }
 
@@ -99,11 +99,11 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
                 BasicTextField(q, { q = it }, singleLine = true, textStyle = T.tab.copy(fontSize = 14.sp), cursorBrush = SolidColor(C.a), modifier = Modifier.fillMaxWidth())
                 if (q.isEmpty()) Text("Search tracks", style = T.tab.copy(color = C.dim, fontSize = 14.sp))
             }
-            Chip("＋ Files", true, C.a, Modifier.height(38.dp)) { onAddFiles() }
-            Chip("＋ Folder", true, C.a, Modifier.height(38.dp)) { onAddFolder() }
-            Chip("History", false, C.a, Modifier.height(38.dp)) { onHistory() }
-            Chip(if (c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty()) "☁ Sources ●" else "☁ Sources", c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty(), C.ok, Modifier.height(38.dp)) { onSources() }
-            Chip(if (c.rb == null) "rekordbox" else "rekordbox ↻", false, C.a, Modifier.height(38.dp)) { onImportXml() }
+            Chip("＋ Files", true, C.a, Modifier.height(48.dp)) { onAddFiles() }
+            Chip("＋ Folder", true, C.a, Modifier.height(48.dp)) { onAddFolder() }
+            Chip("History", false, C.a, Modifier.height(48.dp)) { onHistory() }
+            Chip(if (c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty()) "☁ Sources ●" else "☁ Sources", c.plexToken.isNotBlank() || c.cloudFolder.isNotEmpty(), C.ok, Modifier.height(48.dp)) { onSources() }
+            Chip(if (c.rb == null) "rekordbox" else "rekordbox ↻", false, C.a, Modifier.height(48.dp)) { onImportXml() }
         }
         Text(if (target in 0..1) "Tap a track to load it on deck ${c.deckName(target)}  ·  or drag it onto a waveform" else "Tap a track to load it on the free deck  ·  or drag it onto a waveform", style = T.cap.copy(letterSpacing = 0.2.sp, fontSize = 10.sp, color = C.mu))
 
@@ -115,7 +115,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
                     Text(if (c.indexDone < c.indexTotal) "✦ Analysing local library · ${c.indexDone} / ${c.indexTotal}" + (if (c.indexSkipped > 0) " · ${c.indexSkipped} from collection.xml kept" else "") else "✦ Local library analysed · ${c.indexTotal} tracks" + (if (c.indexSkipped > 0) " · ${c.indexSkipped} with collection.xml grids" else ""), style = T.cap.copy(color = C.ok, letterSpacing = 0.2.sp))
                     if (c.indexDone < c.indexTotal) Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(C.s3)) { Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(C.ok)) }
                 }
-                if (c.indexDone < c.indexTotal) Chip(if (c.indexPaused) "Resume" else "Pause", false, C.ok, Modifier.height(26.dp)) { c.toggleIndexPause() }
+                if (c.indexDone < c.indexTotal) Chip(if (c.indexPaused) "Resume" else "Pause", false, C.ok, Modifier.height(48.dp)) { c.toggleIndexPause() }
             }
         }
 
@@ -123,10 +123,10 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
         var pickerOpen by remember { mutableStateOf(false) }
         if (c.rb != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val pl = c.playlist
-            Chip(if (pl == null) "▤  All tracks  ▾" else "▤  ${pl.path}  ▾", pickerOpen || pl != null, C.fx, Modifier.height(32.dp)) { pickerOpen = !pickerOpen }
+            Chip(if (pl == null) "▤  All tracks  ▾" else "▤  ${pl.path}  ▾", pickerOpen || pl != null, C.fx, Modifier.height(48.dp)) { pickerOpen = !pickerOpen }
             if (pl != null) {
                 Text("${c.playlistOnTablet(pl)} of ${pl.trackIds.size} on this tablet", style = T.cap.copy(letterSpacing = 0.2.sp))
-                Chip("✕", false, C.mu, Modifier.height(32.dp)) { c.selectPlaylist(null) }
+                Chip("✕", false, C.mu, Modifier.height(48.dp)) { c.selectPlaylist(null) }
             }
         }
         if (pickerOpen && c.rb != null) {
@@ -138,24 +138,24 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
         var filtersOpen by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             Text("SORT", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.padding(end = 2.dp))
-            if (c.playlist != null) Chip("Playlist order", c.sortMode == 7, C.a, Modifier.height(30.dp)) { c.sortMode = 7 }
+            if (c.playlist != null) Chip("Playlist order", c.sortMode == 7, C.a, Modifier.height(48.dp)) { c.sortMode = 7 }
             listOf(if (ref != null) "✦ Recommended" else "Recommended", "Newest", "A–Z", "Artist", "BPM", "Key", "Energy").forEachIndexed { i, t ->
-                Chip(t, c.sortMode == i, C.a, Modifier.height(30.dp)) { c.sortMode = i }
+                Chip(t, c.sortMode == i, C.a, Modifier.height(48.dp)) { c.sortMode = i }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             Text("SOURCE", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.padding(end = 2.dp))
-            Chip("All", c.filterSource == null, C.ok, Modifier.height(30.dp)) { c.filterSource = null }
-            if (c.hasLocal) Chip("Local", c.filterSource == "local", C.ok, Modifier.height(30.dp)) { c.filterSource = "local" }
-            if (c.hasPlex) Chip("Plex", c.filterSource == "plex", C.ok, Modifier.height(30.dp)) { c.filterSource = "plex" }
-            if (c.hasDrive) Chip("Drive", c.filterSource == "drive", C.ok, Modifier.height(30.dp)) { c.filterSource = "drive" }
+            Chip("All", c.filterSource == null, C.ok, Modifier.height(48.dp)) { c.filterSource = null }
+            if (c.hasLocal) Chip("Local", c.filterSource == "local", C.ok, Modifier.height(48.dp)) { c.filterSource = "local" }
+            if (c.hasPlex) Chip("Plex", c.filterSource == "plex", C.ok, Modifier.height(48.dp)) { c.filterSource = "plex" }
+            if (c.hasDrive) Chip("Drive", c.filterSource == "drive", C.ok, Modifier.height(48.dp)) { c.filterSource = "drive" }
         }
         if (!compact) Text("PLEX / DRIVE green ✓ = cached (tap to remove) · red ⇩ = cloud (tap to cache) · RB = rekordbox collection grid · ✎ = hand-edited grid", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 9.sp, fontWeight = FontWeight.Normal))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Chip(if (c.activeFilters > 0) "Filters · ${c.activeFilters}" else "Filters", filtersOpen || c.activeFilters > 0, C.ok, Modifier.height(30.dp)) { filtersOpen = !filtersOpen }
-            if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(30.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null; c.filterSource = null }
+            Chip(if (c.activeFilters > 0) "Filters · ${c.activeFilters}" else "Filters", filtersOpen || c.activeFilters > 0, C.ok, Modifier.height(48.dp)) { filtersOpen = !filtersOpen }
+            if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(48.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null; c.filterSource = null }
             Spacer(Modifier.weight(1f))
-            if (c.hiddenCount > 0) Chip(if (c.showHidden) "◀ Back to library" else "Removed · ${c.hiddenCount}", c.showHidden, C.mu, Modifier.height(30.dp)) { c.showHidden = !c.showHidden }
+            if (c.hiddenCount > 0) Chip(if (c.showHidden) "◀ Back to library" else "Removed · ${c.hiddenCount}", c.showHidden, C.mu, Modifier.height(48.dp)) { c.showHidden = !c.showHidden }
         }
         if (filtersOpen) Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             FilterRow("Key", listOf("Any" to (c.filterKey == 0), "Compatible" to (c.filterKey == 1))) { c.filterKey = it }
@@ -163,8 +163,8 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             FilterRow("Energy", listOf("Any" to (c.filterEnergy == 0), "Low" to (c.filterEnergy == 1), "Mid" to (c.filterEnergy == 2), "High" to (c.filterEnergy == 3))) { c.filterEnergy = it }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 Text("VIBE", style = T.cap.copy(fontSize = 8.5.sp, letterSpacing = 0.6.sp), modifier = Modifier.width(52.dp))
-                Chip("All", c.filterVibe == null, C.fx, Modifier.height(28.dp)) { c.filterVibe = null }
-                c.vibesPresent.forEach { v -> Chip(v, c.filterVibe == v, C.fx, Modifier.height(28.dp)) { c.filterVibe = if (c.filterVibe == v) null else v } }
+                Chip("All", c.filterVibe == null, C.fx, Modifier.height(48.dp)) { c.filterVibe = null }
+                c.vibesPresent.forEach { v -> Chip(v, c.filterVibe == v, C.fx, Modifier.height(48.dp)) { c.filterVibe = if (c.filterVibe == v) null else v } }
             }
             if (ref == null) Text("Key / tempo filters compare against the track on the other deck — load one first.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
@@ -175,7 +175,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             if (!c.libPermission) item {
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.s2).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Allow access to see and auto-analyse the music on this device.", style = T.tab.copy(color = C.mu), modifier = Modifier.weight(1f))
-                    Chip("Allow", true, C.a, Modifier.height(30.dp)) { onPermission() }
+                    Chip("Allow", true, C.a, Modifier.height(48.dp)) { onPermission() }
                 }
             }
             items(list, key = { it.id }) { it -> LibRow(c, it, ref, target, onDismiss) }
@@ -203,8 +203,8 @@ fun SourcesPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit, onConne
                     Text(if (c.plexServerName.isNotEmpty()) "Connected to ${c.plexServerName}" else "Plex connected", style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.ok))
                     Text("${c.plexItems.size} tracks stream from Plex · ${c.plexStatus.ifBlank { "ready" }}", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Chip("My collection", c.plexCollectionOnly, C.ok, Modifier.height(28.dp)) { c.setPlexFilter(true) }
-                        Chip("All music", !c.plexCollectionOnly, C.ok, Modifier.height(28.dp)) { c.setPlexFilter(false) }
+                        Chip("My collection", c.plexCollectionOnly, C.ok, Modifier.height(48.dp)) { c.setPlexFilter(true) }
+                        Chip("All music", !c.plexCollectionOnly, C.ok, Modifier.height(48.dp)) { c.setPlexFilter(false) }
                     }
                     Text(
                         if (c.plexCollectionOnly && c.rb == null) "Import a collection.xml to use this filter — until then all Plex music is shown."
@@ -291,11 +291,11 @@ fun SourcesPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit, onConne
                 Text("Decoded audio: ${usage.first} MB of ${c.pcmCacheMb} MB · Plex originals: ${usage.second} MB of ${c.remoteCacheMb} MB", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
                 Text("Decoded PCM", style = T.cap.copy(letterSpacing = 0.4.sp, fontSize = 9.sp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                    for (gb in listOf(0, 1, 2, 3, 4, 6, 8, 12, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.pcmCacheMb == gb * 1024, C.a, Modifier.height(28.dp)) { c.updatePcmCacheMb(gb * 1024); usage = c.cacheUsedMb() }
+                    for (gb in listOf(0, 1, 2, 3, 4, 6, 8, 12, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.pcmCacheMb == gb * 1024, C.a, Modifier.height(48.dp)) { c.updatePcmCacheMb(gb * 1024); usage = c.cacheUsedMb() }
                 }
                 Text("Plex / cloud originals", style = T.cap.copy(letterSpacing = 0.4.sp, fontSize = 9.sp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                    for (gb in listOf(0, 1, 2, 4, 8, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.remoteCacheMb == gb * 1024, C.a, Modifier.height(28.dp)) { c.updateRemoteCacheMb(gb * 1024); usage = c.cacheUsedMb() }
+                    for (gb in listOf(0, 1, 2, 4, 8, 16)) Chip(if (gb == 0) "Off" else "${gb}G", c.remoteCacheMb == gb * 1024, C.a, Modifier.height(48.dp)) { c.updateRemoteCacheMb(gb * 1024); usage = c.cacheUsedMb() }
                 }
                 Text("Original files are kept compressed and decode locally next time, so a Plex-only library stays fast without keeping every track as huge PCM.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -362,7 +362,7 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
             Text(Keys.camelot(it.key), style = T.num.copy(color = kcol, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
         if (c.showHidden) {
-            Chip("Restore", true, C.ok, Modifier.height(34.dp)) { c.restore(it) }
+            Chip("Restore", true, C.ok, Modifier.height(48.dp)) { c.restore(it) }
         } else {
         HeadphoneBtn(previewing) { c.togglePreview(it) }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -380,7 +380,7 @@ private fun LibRow(c: Controller, it: LibItem, ref: RefMeta?, target: Int, onDis
 @Composable
 private fun DeckLoadBtn(label: String, color: Color, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp, 34.dp).clip(RoundedCornerShape(9.dp)).background(color.copy(alpha = .22f))
+        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(9.dp)).background(color.copy(alpha = .22f))
             .border(1.5.dp, color, RoundedCornerShape(9.dp)).pointerInput2(onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -390,7 +390,7 @@ private fun DeckLoadBtn(label: String, color: Color, onClick: () -> Unit) {
 
 @Composable
 private fun RemoveBtn(onClick: () -> Unit) {
-    Box(Modifier.size(30.dp, 34.dp).clip(RoundedCornerShape(9.dp))
+    Box(Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(9.dp))
         .semantics { role = androidx.compose.ui.semantics.Role.Button; contentDescription = "Remove from library" }
         .pointerInput2(onClick), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
@@ -405,7 +405,7 @@ private fun RemoveBtn(onClick: () -> Unit) {
 @Composable
 private fun HeadphoneBtn(on: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(38.dp, 34.dp).clip(RoundedCornerShape(9.dp)).background(if (on) C.fx else C.s3)
+        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(9.dp)).background(if (on) C.fx else C.s3)
             .semantics { role = androidx.compose.ui.semantics.Role.Button; contentDescription = if (on) "Stop preview" else "Preview in headphones" }
             .pointerInput2(onClick),
         contentAlignment = Alignment.Center
@@ -556,7 +556,7 @@ fun OutputPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                         Text(d.name, style = T.tab.copy(fontSize = 13.sp), maxLines = 1)
                         c.testResults[d.key]?.let { Text(it, style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, color = C.ok, fontWeight = FontWeight.Normal)) }
                     }
-                    Chip("TEST", false, C.ok, Modifier.height(30.dp)) { c.testOutputs(listOf(d.key)) }
+                    Chip("TEST", false, C.ok, Modifier.height(48.dp)) { c.testOutputs(listOf(d.key)) }
                 }
             }
             if (c.routedTo.isNotEmpty()) {
@@ -595,7 +595,7 @@ private fun DeviceList(c: Controller, selected: String, allowDefault: Boolean = 
 @Composable
 private fun DeviceRow(name: String, kind: String, on: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (on) C.s3 else C.s1).pointerInput2(onClick).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.s3 else C.s1).pointerInput2(onClick).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (on) C.ok else C.s4))
@@ -705,7 +705,7 @@ fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                                 // the deck sequence at a glance: A → B → A → B
                                 Text(session.joinToString(" → ") { c.deckName(it.deck) } + "  ·  ${session.size} track${if (session.size == 1) "" else "s"}", style = T.cap.copy(letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
                             }
-                            Chip("Share", true, C.a, Modifier.height(30.dp)) {
+                            Chip("Share", true, C.a, Modifier.height(48.dp)) {
                                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, c.tracklistText(session)) }
                                 ctx.startActivity(android.content.Intent.createChooser(send, "Share tracklist"))
                             }
@@ -734,7 +734,7 @@ fun HistoryPanel(c: Controller, visible: Boolean, onDismiss: () -> Unit) {
                 Text("Delete the whole history?", style = T.tab.copy(color = C.bad), modifier = Modifier.weight(1f))
                 PillButton("Cancel", false, C.tx, Modifier.width(100.dp).height(38.dp)) { c.confirmClearHistory = false }
                 PillButton("Delete", true, C.bad, Modifier.width(100.dp).height(38.dp), solid = true) { c.clearHistory() }
-            } else Chip("Clear history", false, C.bad, Modifier.height(32.dp)) { c.confirmClearHistory = true }
+            } else Chip("Clear history", false, C.bad, Modifier.height(48.dp)) { c.confirmClearHistory = true }
         }
     }
 }
@@ -758,8 +758,8 @@ private fun PlaylistPicker(c: Controller, modifier: Modifier, onImportXml: () ->
         }
         item {
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Import a newer collection.xml…", false, C.a, Modifier.height(32.dp)) { onClose(); onImportXml() }
-                Chip("Remove rekordbox playlists", false, C.bad, Modifier.height(32.dp)) { onClose(); c.removeRekordbox() }
+                Chip("Import a newer collection.xml…", false, C.a, Modifier.height(48.dp)) { onClose(); onImportXml() }
+                Chip("Remove rekordbox playlists", false, C.bad, Modifier.height(48.dp)) { onClose(); c.removeRekordbox() }
             }
         }
     }
@@ -768,7 +768,7 @@ private fun PlaylistPicker(c: Controller, modifier: Modifier, onImportXml: () ->
 @Composable
 private fun PickRow(title: String, sub: String, on: Boolean, indent: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(start = if (indent) 14.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.fx.copy(alpha = .15f) else C.s1)
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = if (indent) 14.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.fx.copy(alpha = .15f) else C.s1)
             .border(1.dp, if (on) C.fx.copy(alpha = .7f) else Color.Transparent, RoundedCornerShape(10.dp)).pointerInput2(onClick).padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

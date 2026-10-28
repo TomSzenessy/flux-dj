@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.audio.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.*
 
 
@@ -92,11 +94,13 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                     ) { Text(if (i == 0) "A" else "B", style = T.tab.copy(color = Color.Black, fontWeight = FontWeight.ExtraBold)) }
                     // LOAD / eject button
                     Box(
-                        Modifier.size(34.dp, 26.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(8.dp)).pointerInput2 { onOpenLibrary() },
+                        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(8.dp))
+                            .semantics { contentDescription = "Load a track on deck ${if (i == 0) "A" else "B"}" }
+                            .pointerInput2 { onOpenLibrary() },
                         contentAlignment = Alignment.Center
                     ) { EjectIcon(col) }
                     if (u.loaded) Box(
-                        Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(if (u.gridEdit) C.fx else C.scrimSoft)
+                        Modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (u.gridEdit) C.fx else C.scrimSoft)
                             .border(1.dp, if (u.gridEdit) C.fx else C.line, RoundedCornerShape(8.dp))
                             .pointerInput2 { if (u.gridEdit) c.gridDone(i) else c.gridOpen(i) }.padding(horizontal = 8.dp),
                         contentAlignment = Alignment.Center
@@ -105,7 +109,7 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                         val badge = when (u.analysisSource) { "rekordbox" -> "RB"; "manual" -> "✎ GRID"; else -> "LOCAL" }
                         val bc = if (u.analysisSource == "flux") C.mu else C.fx
                         Box(
-                            Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft)
+                            Modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft)
                                 .border(1.dp, bc.copy(alpha = .5f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp),
                             contentAlignment = Alignment.Center
                         ) { Text(badge, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = bc, fontWeight = FontWeight.Bold)) }
@@ -460,7 +464,9 @@ private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: 
 
 @Composable
 private fun ZoomBtn(label: String, onClick: () -> Unit) {
-    Box(Modifier.size(36.dp, 28.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp))
+        .semantics { contentDescription = if (label == "+") "Zoom in" else "Zoom out" }
+        .pointerInput2(onClick), contentAlignment = Alignment.Center) {
         Text(label, style = T.tab.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
     }
 }
@@ -505,7 +511,7 @@ private fun GridBar(c: Controller, i: Int, modifier: Modifier) {
 
 @Composable
 private fun GridBtn(label: String, accent: Boolean = false, onClick: () -> Unit) {
-    PressBox(Modifier.height(32.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
+    PressBox(Modifier.height(48.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
         Box(
             Modifier.fillMaxHeight().background(if (p) C.fx.copy(alpha = .5f) else if (accent) C.fx.copy(alpha = .2f) else C.s3)
                 .border(1.dp, if (accent) C.fx else C.line, RoundedCornerShape(7.dp)).padding(horizontal = 9.dp),

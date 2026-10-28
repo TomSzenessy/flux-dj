@@ -65,14 +65,15 @@ phone. The performance surface never unmounts.
 
 ## Accessibility
 
-- Primary controls keep a 48 dp touch area; the dense mixer chips use 32–40 dp
-  with generous spacing, and closing that gap is tracked in issue #25. Jog and
-  platters accept a larger hit area than their drawn circle.
+- Every interactive control keeps at least a 48 dp touch area; decorative
+  sub-labels stay smaller by design. Jog and platters accept a larger hit area
+  than their drawn circle.
 - Colour is never the only signal: cue states also change shape/weight, the
   sync state has a label, and meter clipping has a text warning.
 - Shared controls publish `Role.Button`/`Role.Switch` semantics and a label;
-  icon-only controls have a content description, and the deck label announces
-  the loaded track, BPM and key. A full TalkBack audit remains device work (#25).
+  icon-only controls (play, cue, eject, zoom, remove, headphone, jog, pads,
+  knobs, faders) have a content description. A full TalkBack pass remains
+  device work (#25).
 - Text contrast at least 4.5:1 on the tokens above; large numeric readouts at
   least 3:1.
 

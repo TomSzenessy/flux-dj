@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.flux.dj.*
 import app.flux.dj.Controller
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -69,7 +71,7 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
     val u = c.ui[i]; val d = c.engine.decks[i]
     val col = C.deck(i)
     BoxWithConstraints(modifier) {
-        val tH = 46.dp; val chipsH = 32.dp
+        val tH = 48.dp; val chipsH = 48.dp
         val showTitle = !c.view.waves
         val jogS = minOf(maxWidth, maxHeight - tH - chipsH - 12.dp - (if (showTitle) 40.dp else 0.dp)).coerceAtLeast(70.dp)
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)) {
@@ -155,7 +157,7 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
             }
         }
         if (v.loops) {
-            Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Chip("÷2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(0.5f) }
                 PillButton("LOOP ${beatLabel(u.loopBeats)}", u.loopOn, C.fx, Modifier.weight(2.2f).fillMaxHeight(), solid = true) { c.loopTogglePad(i) }
                 Chip("×2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(2f) }
@@ -196,6 +198,7 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         },
         onUp = { when (mode) { 0 -> d.hotCueUp(k); 2 -> d.rollEnd() } },
         onLong = when (mode) { 0 -> ({ d.hotCueClear(k) }); 4 -> ({ c.sampleEdit = k }); else -> null },
+        label = listOf("Hot cue", "Loop", "Roll", "Beat jump", "Sample", "Key shift").getOrElse(mode) { "Pad" } + " " + (k + 1),
     ) { p ->
         val base = if (empty) Color(0xFF0F121B) else color.copy(alpha = if (lit) 0.95f else 0.17f)
         Box(

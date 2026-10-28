@@ -63,8 +63,8 @@ fun AlignScreen(c: Controller) {
             AutoAlignCard(c)
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (c.outMode != OutMode.SINGLE) Chip("Headphones ↔ room", lane == 0, C.fx, Modifier.height(30.dp)) { lane = 0 }
-                Chip("Picture ↔ sound", showPicture && c.outMode == OutMode.SINGLE || lane == 1, C.fx, Modifier.height(30.dp)) { lane = 1 }
+                if (c.outMode != OutMode.SINGLE) Chip("Headphones ↔ room", lane == 0, C.fx, Modifier.height(48.dp)) { lane = 0 }
+                Chip("Picture ↔ sound", showPicture && c.outMode == OutMode.SINGLE || lane == 1, C.fx, Modifier.height(48.dp)) { lane = 1 }
             }
             if (showPicture) PictureLane(c, Modifier.fillMaxWidth().height(150.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(150.dp))
             val value = if (showPicture) c.visualTrimMs else c.offsetMs
@@ -82,7 +82,7 @@ fun AlignScreen(c: Controller) {
                     },
                     style = T.num.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
                 )
-                for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(36.dp).width(52.dp)) { nudge(d) }
+                for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(48.dp).width(52.dp)) { nudge(d) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Cancel", false, C.mu, Modifier.weight(1f).height(46.dp)) { c.cancelAlign() }
@@ -101,13 +101,13 @@ private fun AutoAlignCard(c: Controller) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("AUTOMATIC · MICROPHONE", style = T.cap.copy(color = C.ok, fontSize = 9.sp, letterSpacing = 0.8.sp), modifier = Modifier.weight(1f))
-            if (c.autoStep == 5) Chip("Redo", false, C.ok, Modifier.height(26.dp)) { c.beginAutoAlign() }
+            if (c.autoStep == 5) Chip("Redo", false, C.ok, Modifier.height(48.dp)) { c.beginAutoAlign() }
         }
         when (c.autoStep) {
             0 -> {
                 Text("Put the mic next to the room output, then next to the headphones. FLUX measures each delay, aligns them, and holds the picture/grid back to the latest one. Close the sheet to keep the current timing.", style = T.tab.copy(color = C.mu, fontSize = 12.sp))
                 PillButton("⚡  Auto-align everything", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.beginAutoAlign() }
-                Chip("Measure current output only", false, C.mu, Modifier.height(28.dp)) { c.measureMaster() }
+                Chip("Measure current output only", false, C.mu, Modifier.height(48.dp)) { c.measureMaster() }
             }
             1 -> {
                 Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
@@ -123,7 +123,7 @@ private fun AutoAlignCard(c: Controller) {
             3 -> {
                 Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
                 PillButton("Measure headphones", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureCue() }
-                Chip("Use room only", false, C.mu, Modifier.height(28.dp)) { c.finishMasterOnly() }
+                Chip("Use room only", false, C.mu, Modifier.height(48.dp)) { c.finishMasterOnly() }
             }
             5 -> Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp, color = C.ok))
         }

@@ -38,12 +38,12 @@ fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
             Strip(c, 0, Modifier.weight(1f).fillMaxHeight())
             Strip(c, 1, Modifier.weight(1f).fillMaxHeight())
         }
-        HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(34.dp), label = "Crossfader")
+        HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(48.dp), label = "Crossfader")
         if (v.eq) Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.outVolume, { c.doOutVolume(it) }, C.ok, "VOL", Modifier.size(40.dp), default = 1f, bipolar = false) }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.master, { c.doMaster(it) }, C.tx, "MST", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpMix, { c.doHpMix(it) }, C.fx, "CUE·M", Modifier.size(40.dp), default = 0f, bipolar = false) }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpLevel, { c.doHpLevel(it) }, C.fx, "HP", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.outVolume, { c.doOutVolume(it) }, C.ok, "VOL", Modifier.size(48.dp), default = 1f, bipolar = false) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.master, { c.doMaster(it) }, C.tx, "MST", Modifier.size(48.dp), default = 0.8f, bipolar = false) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpMix, { c.doHpMix(it) }, C.fx, "CUE·M", Modifier.size(48.dp), default = 0f, bipolar = false) }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.hpLevel, { c.doHpLevel(it) }, C.fx, "HP", Modifier.size(48.dp), default = 0.8f, bipolar = false) }
             Chip(when (c.curve) { Curve.SMOOTH -> "SMOOTH"; Curve.SHARP -> "SHARP"; Curve.CUT -> "CUT" }, false, C.fx, Modifier.weight(1.6f).height(28.dp)) {
                 c.doCurve(Curve.entries[(c.curve.ordinal + 1) % 3])
             }
@@ -59,7 +59,7 @@ private fun Strip(c: Controller, i: Int, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             if (v.eq) BoxWithConstraints(Modifier.width(46.dp).fillMaxHeight()) {
-                val ks = minOf(46.dp, maxHeight / 5.1f)
+                val ks = minOf(48.dp, maxHeight / 5.1f)
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly, horizontalAlignment = Alignment.CenterHorizontally) {
                     Knob(s.trim, { c.setTrim(i, it) }, C.tx, "TRIM", Modifier.size(ks))
                     Knob(s.hi, { c.setHi(i, it) }, col, "HI", Modifier.size(ks))
