@@ -107,6 +107,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var plexError by mutableStateOf<String?>(null)
     var plexCollectionOnly by mutableStateOf(sp.getBoolean("plex_collection_only", false))
     internal var plexAllCache: List<LibItem> = emptyList()
+
+    internal var cacheEpoch by mutableIntStateOf(0)
+
+    internal val cacheScan = java.util.concurrent.atomic.AtomicBoolean(false)
     internal var plexPoll: Job? = null
     var bulkDownloading by mutableStateOf(false)
     var bulkDone by mutableIntStateOf(0)
@@ -492,7 +496,6 @@ class Controller(app: Application) : AndroidViewModel(app) {
     internal val remoteCap get() = remoteCacheMb.toLong() * 1024 * 1024
 
     internal val cachedMemo = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
-    internal var cachedMemoRev = -1
 
     fun cancelPlexDownload() { bulkJob?.cancel(); bulkJob = null; bulkDownloading = false; toast = "Plex download cancelled" }
     fun seekPreview(f: Float) = engine.previewSeek(f)

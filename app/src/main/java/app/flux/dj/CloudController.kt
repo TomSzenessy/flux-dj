@@ -58,6 +58,7 @@ internal fun Controller.cacheOne(item: LibItem) {
             }
         } catch (_: Exception) {}
         withContext(Dispatchers.Main) {
+            if (ok) invalidateCacheStates()
             libRev++
             toast = if (ok) "“${item.title}” cached for offline" else "Couldn't cache “${item.title}”"
         }
@@ -68,6 +69,7 @@ internal fun Controller.uncacheOne(item: LibItem) {
     pcmFile(item.id).delete()
     val r = remoteFile(item.id)
     r.delete(); remoteOk(r).delete()
+    invalidateCacheStates()
     libRev++
     toast = "Removed the offline copy of “${item.title}”"
 }

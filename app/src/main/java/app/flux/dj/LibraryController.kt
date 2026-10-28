@@ -264,6 +264,7 @@ internal fun Controller.cacheUsedMb(): Pair<Int, Int> {
 internal fun Controller.clearAudioCache() {
     pcmDir.listFiles()?.forEach { it.delete() }
     remoteDir.listFiles()?.forEach { it.delete() }
+    invalidateCacheStates()
     libRev++
     toast = "Audio cache cleared"
 }
@@ -280,8 +281,25 @@ private fun Controller.trimRemoteCache() {
 
 /** Memoised per library revision: composition must not stat the same files every frame. */
 internal fun Controller.isCached(item: LibItem): Boolean {
-    if (cachedMemoRev != libRev) { cachedMemo.clear(); cachedMemoRev = libRev }
-    return cachedMemo.getOrPut(item.id) { isCachedNow(item) }
+    cacheEpoch   // observe the cache generation in composition
+    if (item.sourceKind != "plex" && item.sourceKind != "drive") return true
+    cachedMemo[item.id]?.let { return it }
+    // Never stat/read files from composition: build the whole cloud map on IO once.
+    if (cacheScan.compareAndSet(false, true)) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val map = allItems().filter { it.sourceKind == "plex" || it.sourceKind == "drive" }
+                .associate { it.id to isCachedNow(it) }
+            withContext(Dispatchers.Main) {
+                cachedMemo.clear(); cachedMemo.putAll(map)
+                cacheEpoch++; cacheScan.set(false)
+            }
+        }
+    }
+    return false
+}
+
+internal fun Controller.invalidateCacheStates() {
+    cachedMemo.clear(); cacheEpoch++
 }
 
 /** True when the track can play without the network (Plex original cached, PCM cached, or local). */
@@ -414,7 +432,7 @@ internal fun Controller.savePcm(t: Track) {
             val files = pcmDir.listFiles { x -> x.name.endsWith(".pcm") }?.sortedByDescending { it.lastModified() } ?: return@launch
             var total = 0L
             for (x in files) { total += x.length(); if (total > pcmCap) x.delete() }
-            withContext(Dispatchers.Main) { libRev++ }
+            withContext(Dispatchers.Main) { invalidateCacheStates(); libRev++ }
         } catch (_: Exception) { tmp.delete() }
     }
 }
