@@ -973,7 +973,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
             // If the other deck was following this one, it keeps its current tempo and becomes master
             // (otherwise it would jump to the new track's BPM).
             val o = engine.decks[1 - i]
-            if (o.syncOn) { o.tempo = ((o.effRatio - 1.0) / o.range).toFloat().coerceIn(-1f, 1f); o.syncOn = false }
+            if (o.syncOn) releaseSync(o)
             restoring[i] = true
             d.load(t); d.quantize = quantize
             hadCues = restoreCues(i, t)
