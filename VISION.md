@@ -41,7 +41,7 @@ audible glitch and without touching a laptop.
 - No account of our own, no analytics, no telemetry, no cloud upload of the
   user's library.
 - Build and unit tests run with JDK 17 and the Android SDK 35; the on-device
-  reference is a reference Android tablet (Android 13).
+  reference device is an Android 13 tablet.
 
 ## Non-goals
 
