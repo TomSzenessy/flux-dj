@@ -47,3 +47,6 @@ vendor/
 .mcp.local.json
 test-results/
 playwright-report/
+
+# Kotlin/Gradle daemon state
+.kotlin/

@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.audio.Curve
 
@@ -29,7 +30,7 @@ fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
     val v = c.view
     val shape = RoundedCornerShape(16.dp)
     Column(
-        modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, Color(0xFF0A0B10)))).border(1.dp, C.line, shape).padding(8.dp),
+        modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, C.deep))).border(1.dp, C.line, shape).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         PhaseMeter(c, Modifier.fillMaxWidth().height(22.dp))
@@ -37,7 +38,7 @@ fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
             Strip(c, 0, Modifier.weight(1f).fillMaxHeight())
             Strip(c, 1, Modifier.weight(1f).fillMaxHeight())
         }
-        HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(34.dp))
+        HFader(c.xfader, { c.setXf(it) }, onStart = { c.cancelTransition() }, modifier = Modifier.fillMaxWidth().height(34.dp), label = "Crossfader")
         if (v.eq) Row(Modifier.fillMaxWidth().height(46.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.outVolume, { c.doOutVolume(it) }, C.ok, "VOL", Modifier.size(40.dp), default = 1f, bipolar = false) }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Knob(c.master, { c.doMaster(it) }, C.tx, "MST", Modifier.size(40.dp), default = 0.8f, bipolar = false) }
@@ -70,7 +71,7 @@ private fun Strip(c: Controller, i: Int, modifier: Modifier) {
             Row(Modifier.weight(1f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 val meter = @Composable { if (v.meters) VuMeter({ c.engine.chans[i].meter }, c.tick, Modifier.width(8.dp).fillMaxHeight().padding(vertical = 2.dp), 16) }
                 if (i == 0) meter()
-                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { VFader(s.fader, { c.setFader(i, it) }, col, Modifier.width(48.dp).fillMaxHeight(), ticks = true, thumbH = 40.dp) }
+                Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { VFader(s.fader, { c.setFader(i, it) }, col, Modifier.width(48.dp).fillMaxHeight(), ticks = true, thumbH = 40.dp, label = "Channel ${c.deckName(i)} fader") }
                 if (i == 1) meter()
             }
         }

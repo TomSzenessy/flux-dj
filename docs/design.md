@@ -27,22 +27,27 @@ sheet. The design is a dark instrument panel, not a generic Material app.
 
 | Token | Value | Use |
 |---|---|---|
-| `surface` | `#05070A` | app background |
-| `panel` | `#0D1117` at 92% | panels and sheets |
-| `line` | `#1F2937` | separators, inactive track |
-| `text` | `#E5E7EB` | primary text |
-| `textMuted` | `#94A3B8` | labels, secondary values |
-| `deckA` | `#22D3EE` | Deck A accent, waveform high band |
-| `deckB` | `#F472B6` | Deck B accent, waveform low band |
-| `sync` | `#FBBF24` | sync, beat FX, armed states |
+| `bg` | `#07080B` | app background |
+| `s1` | `#0E1016` | panels and cards |
+| `s2` | `#141722` | chips, insets |
+| `s3` | `#1D2131` | pressed wells |
+| `s4` | `#2A2F44` | raised thumb |
+| `line` | white at 10% | separators, inactive outlines |
+| `tx` | `#E8EBF2` | primary text |
+| `mu` | `#7D849A` | labels, secondary values |
+| `dim` | `#4A5068` | tertiary labels (large text only) |
+| `a` | `#22D3EE` | Deck A accent |
+| `b` | `#F472B6` | Deck B accent |
+| `fx` | `#FBBF24` | sync, beat FX, armed states |
 | `ok` | `#34D399` | harmonic match, recording armed |
-| `danger` | `#F87171` | clip, destructive action |
-| `waveLow` | `#F472B6` | waveform low band |
-| `waveMid` | `#FBBF24` | waveform mid band |
-| `waveHigh` | `#67E8F9` | waveform high band |
+| `bad` | `#EF4444` | clip, destructive action |
+| `lo` | `#F43F5E` | waveform low band |
+| `mid` | `#FBBF24` | waveform mid band |
+| `hi` | `#E0F2FE` | waveform high band |
 
-- **Type:** one sans-serif (system default) with tabular figures for BPM, time,
-  key and gain; deck labels in small caps; no display face.
+- **Type:** system sans for labels and controls; `FontFamily.Monospace` for BPM,
+  time, key and gain so figures stay aligned; deck labels in small caps; no
+  display face.
 - **Shape:** 12 dp panels, 8 dp chips, 4 dp track backgrounds; 1 dp hairlines.
 - **Spacing:** 4/8/12/16 dp grid; the mixer column is fixed-width so the
   waveform width changes with the panel layout, not with content.
@@ -60,12 +65,14 @@ phone. The performance surface never unmounts.
 
 ## Accessibility
 
-- Minimum touch target 48 dp; jog and platters accept a larger hit area than
-  their drawn circle.
+- Primary controls keep a 48 dp touch area; the dense mixer chips use 32–40 dp
+  with generous spacing, and closing that gap is tracked in issue #25. Jog and
+  platters accept a larger hit area than their drawn circle.
 - Colour is never the only signal: cue states also change shape/weight, the
   sync state has a label, and meter clipping has a text warning.
-- Content descriptions on every icon-only control; the deck label announces the
-  loaded track, BPM and key for screen readers.
+- Shared controls publish `Role.Button`/`Role.Switch` semantics and a label;
+  icon-only controls have a content description, and the deck label announces
+  the loaded track, BPM and key. A full TalkBack audit remains device work (#25).
 - Text contrast at least 4.5:1 on the tokens above; large numeric readouts at
   least 3:1.
 
@@ -73,4 +80,4 @@ phone. The performance surface never unmounts.
 
 A judged screenshot review at tablet and phone landscape sizes (light and dark
 where the system supports it), plus the on-device session in
-[`../VISION.md`](../VISION.md). `make ui-review` captures the screenshots.
+[`../VISION.md`](../VISION.md). `make ui-review` captures the screenshots once an Android host is available.

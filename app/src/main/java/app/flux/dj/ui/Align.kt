@@ -28,6 +28,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.audio.CALIB_BEAT
 import app.flux.dj.audio.OutMode
@@ -50,7 +51,7 @@ private const val WINDOW_MS = 4000f        // lanes show four beats (one per sec
 fun AlignScreen(c: Controller) {
     var lane by remember { mutableStateOf(if (c.outMode == OutMode.SINGLE) 1 else 0) }
     val showPicture = lane == 1 || c.outMode == OutMode.SINGLE
-    Box(Modifier.fillMaxSize().background(Color(0xEE05060A)).pointerInput2 { c.cancelAlign() }, contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(C.scrimStrong).pointerInput2 { c.cancelAlign() }, contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 900.dp).fillMaxWidth(0.9f).fillMaxHeight(0.92f)
                 .verticalScroll(rememberScrollState()).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).pointerInput2 { }.padding(24.dp),
@@ -169,7 +170,7 @@ private fun Modifier.dragMs(startOf: () -> Int, onMs: (Int) -> Unit): Modifier =
 private fun CueLanes(c: Controller, modifier: Modifier) {
     val masterName = if (c.outMode == OutMode.SPLIT) "Master (right)" else c.routedTo.ifEmpty { "Master" }
     val cueName = if (c.outMode == OutMode.SPLIT) "Cue (left)" else c.routedCue.ifEmpty { "Headphones" }
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0A0B10)).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
         Canvas(Modifier.fillMaxSize().dragMs({ c.offsetMs }) { c.setOffset(it.coerceIn(-RANGE_MS, RANGE_MS)) }) {
             c.tick.longValue
             val w = size.width; val h = size.height
@@ -189,7 +190,7 @@ private fun CueLanes(c: Controller, modifier: Modifier) {
 
 @Composable
 private fun PictureLane(c: Controller, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0A0B10)).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
         Canvas(Modifier.fillMaxSize().dragMs({ c.visualTrimMs }) { c.setVisualTrim(it) }) {
             c.tick.longValue
             val w = size.width; val h = size.height

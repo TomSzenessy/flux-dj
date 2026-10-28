@@ -37,23 +37,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.LibItem
 import app.flux.dj.RefMeta
 import app.flux.dj.audio.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.abs
 
 @Composable
 fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp = 420.dp, content: @Composable ColumnScope.() -> Unit) {
     AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
-        Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDismiss() })
+        Box(Modifier.fillMaxSize().background(C.scrimSoft).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDismiss() })
     }
     AnimatedVisibility(visible, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
             Column(
                 Modifier.widthIn(max = width).fillMaxWidth(0.94f).fillMaxHeight()
-                    .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp)).background(Color(0xFF0C0E14))
+                    .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp)).background(C.panelDeep)
                     .border(1.dp, C.line, RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(16.dp),
@@ -385,7 +389,9 @@ private fun DeckLoadBtn(label: String, color: Color, onClick: () -> Unit) {
 
 @Composable
 private fun RemoveBtn(onClick: () -> Unit) {
-    Box(Modifier.size(30.dp, 34.dp).clip(RoundedCornerShape(9.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(30.dp, 34.dp).clip(RoundedCornerShape(9.dp))
+        .semantics { role = androidx.compose.ui.semantics.Role.Button; contentDescription = "Remove from library" }
+        .pointerInput2(onClick), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
             val col = C.dim; val sw = size.width * 0.12f
             drawLine(col, androidx.compose.ui.geometry.Offset(0f, size.height * 0.2f), androidx.compose.ui.geometry.Offset(size.width, size.height * 0.2f), sw)
@@ -398,7 +404,9 @@ private fun RemoveBtn(onClick: () -> Unit) {
 @Composable
 private fun HeadphoneBtn(on: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(38.dp, 34.dp).clip(RoundedCornerShape(9.dp)).background(if (on) C.fx else C.s3).pointerInput2(onClick),
+        Modifier.size(38.dp, 34.dp).clip(RoundedCornerShape(9.dp)).background(if (on) C.fx else C.s3)
+            .semantics { role = androidx.compose.ui.semantics.Role.Button; contentDescription = if (on) "Stop preview" else "Preview in headphones" }
+            .pointerInput2(onClick),
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
@@ -417,7 +425,7 @@ private fun PreviewBar(c: Controller) {
     Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(if (c.previewLoading) "Decoding…" else "🎧  ${c.previewTime}", style = T.num.copy(fontSize = 11.sp, color = C.fx), modifier = Modifier.width(118.dp), maxLines = 1)
         androidx.compose.foundation.Canvas(
-            Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF0A0B10))
+            Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(6.dp)).background(C.deep)
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
@@ -631,7 +639,7 @@ private fun ToggleRow(title: String, sub: String, on: Boolean, onChange: (Boolea
             Text(title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 14.sp))
             Text(sub, style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
         }
-        Toggle(on, onChange)
+        Toggle(on, onChange, label = title)
     }
 }
 

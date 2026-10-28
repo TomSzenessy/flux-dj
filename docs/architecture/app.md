@@ -1,7 +1,7 @@
 # FLUX app architecture
 
 <!-- index: design | FLUX Android app structure, audio engine seams, and state ownership | Adding a screen, changing audio behaviour, or locating a module. -->
-<!-- covers: app/** -->
+<!-- covers: app/** build.gradle.kts settings.gradle.kts gradle.properties gradlew.bat gradle/** -->
 
 One Android application module (`:app`) in Kotlin. The audio engine is plain
 Kotlin/JVM code with no Android UI dependency; the Compose layer observes its
@@ -15,6 +15,27 @@ state. There is no second process, no service and no native library.
 | State | `app.flux.dj` | `Controller` (ViewModel): library, analysis cache, imports, suggestions, history, outputs, samples, grid edits | `Controller` |
 | Audio | `app.flux.dj.audio` | Mixer thread, decks, decoder, analyser, DSP, synth, microphone alignment | `Engine` |
 | Integrations | `app.flux.dj` | rekordbox XML, Plex/Drive clients, MediaStore indexing, hardened XML and transport policy | `Rekordbox`, `Cloud`, `Xml`, `Http`, `Controller` |
+
+## State modules
+
+`Controller` is the observable root; cohesive behaviour lives in extension
+modules so one changing fact has one file. Bodies are plain `internal fun
+Controller.*`; the Compose layer sees the same calls.
+
+| Module | Owns |
+|---|---|
+| `Controller.kt` | Snapshot state, construction/init, `poll()`/`needsPolling()`, transport setters, simple actions |
+| `LibraryController.kt` | MediaStore library, imports/folders, deck loading/decoding, analysis and caches, suggestions/filters, preview, history, sampler pads |
+| `CloudController.kt` | Plex sign-in/sync/pagination, Drive/cloud folder scan, remote cache/download |
+| `RekordboxController.kt` | `collection.xml` import, match/apply precedence, duplicate report |
+| `OutputController.kt` | Output devices/modes, routing, alignment/mic measurement, output tests |
+| `GridController.kt` | Beat-grid editor state and operations |
+| `UiModels.kt` | `LibItem`, `HistEntry`, `RefMeta`, `DeckUi`, `ChanUi`, `ViewPrefs`, `DeviceOpt`, media constants |
+| `LibraryRanking.kt` | Pure relevance/tempo/source helpers (unit-tested) |
+| `Xml.kt`, `Http.kt` | Parser and transport policy |
+
+`project.toml` is the machine-readable source for paths and commands. This table
+is the human navigation view, not a second command catalog.
 
 ## Seams
 

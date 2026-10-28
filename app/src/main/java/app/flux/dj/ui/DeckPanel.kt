@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import kotlin.math.abs
 import kotlin.math.max
@@ -42,7 +43,7 @@ fun DeckPanel(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modifier = Mo
     val v = c.view
     val shape = RoundedCornerShape(16.dp)
     Row(
-        modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, Color(0xFF0A0B10)))).border(1.dp, C.line, shape).padding(8.dp),
+        modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, C.deep))).border(1.dp, C.line, shape).padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val jog = @Composable { m: Modifier -> if (v.jog) JogColumn(c, i, onLoad, m) }
@@ -73,16 +74,16 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
             Jog(c, i, Modifier.size(jogS))
             Row(Modifier.fillMaxWidth().height(tH), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // skip to start
-                PressBox(Modifier.width(36.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { d.toStart() }) { p ->
+                PressBox(Modifier.width(36.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { d.toStart() }, label = "Back to start") { p ->
                     Box(Modifier.fillMaxSize().background(if (p) C.s4 else C.s3).border(1.dp, C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { SkipStartIcon(col) }
                 }
                 // CUE (momentary)
-                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.cuePad(i) }, onUp = { d.cueUp() }) { p ->
+                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.cuePad(i) }, onUp = { d.cueUp() }, label = "Cue") { p ->
                     Box(Modifier.fillMaxSize().background(if (p) col.copy(alpha = .3f) else C.s3).border(1.dp, if (p) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                        Text("CUE", style = T.tab.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = if (p) col else Color(0xFFFF9F5A)))
+                        Text("CUE", style = T.tab.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = if (p) col else C.cueText))
                     }
                 }
-                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.togglePlayPad(i) }) { p ->
+                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.togglePlayPad(i) }, label = if (u.playing) "Pause" else "Play") { p ->
                     Box(Modifier.fillMaxSize().background(if (u.playing) col else if (p) C.s4 else C.s3).border(1.dp, if (u.playing) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                         PlayIcon(u.playing, if (u.playing) Color.Black else col)
                     }
@@ -210,7 +211,7 @@ private fun PitchColumn(c: Controller, i: Int, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("TEMPO", style = T.cap.copy(fontSize = 7.5.sp, letterSpacing = 0.5.sp))
         NudgeBtn("+", col) { down -> c.engine.decks[i].bend = if (down) 0.04f else 0f }
-        VFader((u.tempo + 1f) / 2f, { c.pitch(i, it * 2f - 1f) }, col, Modifier.weight(1f).fillMaxWidth(), default = 0.5f, ticks = true, thumbH = 30.dp)
+        VFader((u.tempo + 1f) / 2f, { c.pitch(i, it * 2f - 1f) }, col, Modifier.weight(1f).fillMaxWidth(), default = 0.5f, ticks = true, thumbH = 30.dp, label = "Tempo deck ${c.deckName(i)}")
         NudgeBtn("−", col) { down -> c.engine.decks[i].bend = if (down) -0.04f else 0f }
         Chip("±${(u.range * 100).toInt()}", false, col, Modifier.fillMaxWidth().height(24.dp)) { c.cycleRange(i) }
     }

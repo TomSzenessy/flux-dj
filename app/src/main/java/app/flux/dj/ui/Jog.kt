@@ -12,11 +12,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.audio.SR
 import kotlin.math.*
@@ -34,7 +37,9 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
     val col = C.deck(i)
     val hp = rememberHaptic()
     Box(
-        modifier.aspectRatio(1f).pointerInput(i) {
+        modifier.aspectRatio(1f)
+            .semantics { contentDescription = "Jog wheel deck ${if (i == 0) "A" else "B"}; scratch in the centre, pitch bend on the rim" }
+            .pointerInput(i) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 if (d.track == null) return@awaitEachGesture
@@ -87,7 +92,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             val vp = c.vpos(i)
             val frac = if (t != null) (vp / t.frames).toFloat() else 0f
             // body
-            drawCircle(Brush.radialGradient(listOf(Color(0xFF1B2030), Color(0xFF0A0C13)), center = Offset(ctr.x, ctr.y - R * .25f), radius = R * 1.1f), R, ctr)
+            drawCircle(Brush.radialGradient(listOf(C.jogBody, C.jogDeep), center = Offset(ctr.x, ctr.y - R * .25f), radius = R * 1.1f), R, ctr)
             drawCircle(C.line, R, ctr, style = Stroke(1.5f))
             // rim track (progress)
             val rimW = max(3f, R * 0.05f)
@@ -104,7 +109,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             // spinning platter
             val rot = if (t != null) (vp / FRAMES_PER_REV * 2 * PI) else 0.0
             val pr = R * 0.74f
-            drawCircle(Color(0xFF0E111A), pr, ctr)
+            drawCircle(C.jogPlatter, pr, ctr)
             drawCircle(C.line, pr, ctr, style = Stroke(1f))
             for (k in 0 until 48) {
                 val a = rot + k * 2 * PI / 48
@@ -117,7 +122,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             val na = rot - PI / 2
             drawCircle(col, max(4f, R * 0.045f), Offset(ctr.x + cos(na).toFloat() * pr * 0.66f, ctr.y + sin(na).toFloat() * pr * 0.66f))
             // hub
-            drawCircle(Color(0xFF12151F), R * 0.46f, ctr)
+            drawCircle(C.jogHub, R * 0.46f, ctr)
             drawCircle(C.line, R * 0.46f, ctr, style = Stroke(1f))
             if (d.scratching) drawCircle(col.copy(alpha = 0.15f), pr, ctr)
         }

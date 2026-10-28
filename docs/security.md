@@ -114,3 +114,29 @@ Report suspected vulnerabilities privately through the process in
 [`../SECURITY.md`](../SECURITY.md). Do not put exploit details, secrets, or
 personal data in a public issue. A security finding becomes public only after a
 maintainer decides disclosure and remediation are safe.
+
+## FLUX application boundaries
+
+The Android app adds these concrete controls; keep them true when touching
+`Xml.kt`, `Http.kt`, `AndroidManifest.xml`, `Cloud.kt` or the release workflow.
+
+- **XML:** every rekordbox/Plex document goes through `Xml.parse`, which disables
+  doctypes, external entities and external DTD/schema access. A parse failure is
+  reported, never silently ignored.
+- **Transport:** token-bearing HTTP is HTTPS or a loopback/RFC1918/link-local
+  host; redirects are followed manually, same-host only, so `X-Plex-Token` never
+  crosses to another host. Responses are capped at 32 MB and Plex sections are
+  paginated.
+- **Storage:** the Plex token stays in app-private SharedPreferences but
+  `shared_prefs/flux.xml`, `plex.tsv`, `rekordbox.xml` and `history.tsv` are
+  excluded from Android cloud backup and device transfer. `allowBackup` remains
+  true only for non-sensitive settings.
+- **Input:** a picked `collection.xml` is size-capped, parsed from a temporary
+  copy, and only replaces the stored collection after a successful parse.
+- **Release:** the release APK is signed by an environment-supplied, stable
+  identity; without it the build is unsigned and CI refuses to publish. Actions
+  are SHA-pinned, the token is read-only except in the tag-gated release job, and
+  the checkout credential is not persisted.
+- **Permissions:** only `READ_MEDIA_AUDIO`/legacy storage, `INTERNET`,
+  `RECORD_AUDIO` and optional `BLUETOOTH_CONNECT` are requested; Bluetooth access
+  is prompted from the Outputs sheet, not at launch.

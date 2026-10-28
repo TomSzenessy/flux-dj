@@ -68,6 +68,9 @@ object Decoder {
             var outDone = false
             var chunk = ShortArray(8192)
             var hitLimit = false
+            // Causal 4-tap low-pass for high-rate sources (88.2/96/192 kHz) before decimation.
+            var aaL1 = 0f; var aaL2 = 0f; var aaL3 = 0f
+            var aaR1 = 0f; var aaR2 = 0f; var aaR3 = 0f
             fun ensure(n: Int): Boolean {
                 if (outLen + n <= out.size) return true
                 if (outLen + n > limit || out.size >= limit) { outDone = true; hitLimit = true; return false }
@@ -125,6 +128,19 @@ object Decoder {
                             else for (f in 0 until frames) { val a = f * inCh; out[outLen++] = chunk[a]; out[outLen++] = if (inCh > 1) chunk[a + 1] else chunk[a] }
                         }
                     } else {
+                        if (inRate > SR * 3 / 2) {
+                            for (f in 0 until frames) {
+                                val a = f * inCh
+                                val l = chunk[a].toFloat()
+                                val r = if (inCh > 1) chunk[a + 1].toFloat() else l
+                                val yl = (l + 2 * aaL1 + 2 * aaL2 + aaL3) / 6f
+                                val yr = (r + 2 * aaR1 + 2 * aaR2 + aaR3) / 6f
+                                aaL3 = aaL2; aaL2 = aaL1; aaL1 = l
+                                aaR3 = aaR2; aaR2 = aaR1; aaR1 = r
+                                chunk[a] = (yl + 0.5f).toInt().toShort()
+                                if (inCh > 1) chunk[a + 1] = (yr + 0.5f).toInt().toShort()
+                            }
+                        }
                         // linear resample; frame -1 is the last frame of the previous chunk
                         val step = inRate.toDouble() / SR
                         ensure(((frames + 2) / step).toInt() * 2 + 4)

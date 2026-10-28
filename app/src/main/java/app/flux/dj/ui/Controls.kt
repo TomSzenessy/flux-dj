@@ -22,6 +22,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -43,6 +49,7 @@ fun Knob(
     value: Float, onChange: (Float) -> Unit, color: Color, label: String,
     modifier: Modifier = Modifier, default: Float = 0.5f, bipolar: Boolean = true,
 ) {
+    val described = if (label.isBlank()) "Knob" else label
     val cur by rememberUpdatedState(value)
     val cb by rememberUpdatedState(onChange)
     val haptic = rememberHaptic()
@@ -50,6 +57,11 @@ fun Knob(
     Box(
         modifier
             .aspectRatio(1f)
+            .semantics {
+                contentDescription = described
+                stateDescription = "${(value * 100).toInt()}%"
+                role = Role.Button
+            }
             .pointerInput(default) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -86,7 +98,7 @@ fun Knob(
             val topLeft = Offset(c.x - arcR, c.y - arcR)
             val sz = Size(arcR * 2, arcR * 2)
             // body
-            drawCircle(Brush.radialGradient(listOf(Color(0xFF30364F), Color(0xFF151827)), center = Offset(c.x, c.y - s * .15f), radius = s * .7f), radius = rOut - sw - 1f, center = c)
+            drawCircle(Brush.radialGradient(listOf(C.knobHi, C.knobLo), center = Offset(c.x, c.y - s * .15f), radius = s * .7f), radius = rOut - sw - 1f, center = c)
             drawCircle(C.line, radius = rOut - sw - 1f, center = c, style = Stroke(1f))
             // track
             drawArc(Color(0x22FFFFFF), 135f, 270f, false, topLeft, sz, style = Stroke(sw, cap = StrokeCap.Round))
@@ -102,7 +114,7 @@ fun Knob(
                 Offset(c.x + cos(ang).toFloat() * r1 * .88f, c.y + sin(ang).toFloat() * r1 * .88f), strokeWidth = max(2f, s * 0.055f), cap = StrokeCap.Round)
         }
         if (label.isNotEmpty()) {
-            Text(label, Modifier.align(Alignment.Center).offset(y = 0.dp), style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.sp, color = Color(0xFF8C93AA)))
+            Text(label, Modifier.align(Alignment.Center).offset(y = 0.dp), style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.sp, color = C.labelDim))
         }
     }
 }
@@ -111,7 +123,7 @@ fun Knob(
 @Composable
 fun VFader(
     value: Float, onChange: (Float) -> Unit, color: Color, modifier: Modifier = Modifier,
-    default: Float? = null, ticks: Boolean = false, thumbH: Dp = 34.dp,
+    default: Float? = null, ticks: Boolean = false, thumbH: Dp = 34.dp, label: String = "Fader",
 ) {
     val cur by rememberUpdatedState(value)
     val cb by rememberUpdatedState(onChange)
@@ -119,6 +131,7 @@ fun VFader(
     val haptic = rememberHaptic()
     Canvas(
         modifier
+            .semantics { contentDescription = label; stateDescription = "${(value * 100).toInt()}%" }
             .pointerInput(default) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -158,7 +171,7 @@ fun VFader(
         val slotW = max(4.dp.toPx(), w * 0.14f)
         drawRoundRect(C.s2, Offset(0f, 0f), size, rr)
         drawRoundRect(C.line, Offset(0f, 0f), size, rr, style = Stroke(1f))
-        drawRoundRect(Color(0xFF05060A), Offset((w - slotW) / 2, th / 2), Size(slotW, travel), CornerRadius(slotW / 2, slotW / 2))
+        drawRoundRect(C.well, Offset((w - slotW) / 2, th / 2), Size(slotW, travel), CornerRadius(slotW / 2, slotW / 2))
         val y = (1f - value) * travel
         // active fill
         drawRoundRect(color.copy(alpha = 0.55f), Offset((w - slotW) / 2, y + th / 2), Size(slotW, travel - y), CornerRadius(slotW / 2, slotW / 2))
@@ -169,7 +182,7 @@ fun VFader(
         }
         // thumb
         val pad = 2.dp.toPx()
-        drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF4A5170), Color(0xFF282D43)), y, y + th), Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()))
+        drawRoundRect(Brush.verticalGradient(listOf(C.faderHi, C.faderLo), y, y + th), Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()))
         drawRoundRect(Color(0x33FFFFFF), Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()), style = Stroke(1f))
         drawLine(color, Offset(pad + 6.dp.toPx(), y + th / 2), Offset(w - pad - 6.dp.toPx(), y + th / 2), 2.5f, StrokeCap.Round)
     }
@@ -177,14 +190,15 @@ fun VFader(
 
 /** Horizontal crossfader. value 0 (A) .. 1 (B). */
 @Composable
-fun HFader(value: Float, onChange: (Float) -> Unit, onStart: () -> Unit = {}, modifier: Modifier = Modifier) {
+fun HFader(value: Float, onChange: (Float) -> Unit, onStart: () -> Unit = {}, modifier: Modifier = Modifier, label: String = "Crossfader") {
     val cur by rememberUpdatedState(value)
     val cb by rememberUpdatedState(onChange)
     val st by rememberUpdatedState(onStart)
     var lastTap by remember { mutableLongStateOf(0L) }
     val haptic = rememberHaptic()
     Canvas(
-        modifier.pointerInput(Unit) {
+        modifier.semantics { contentDescription = label; stateDescription = "${(value * 100).toInt()}%" }
+            .pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 st()
@@ -219,10 +233,10 @@ fun HFader(value: Float, onChange: (Float) -> Unit, onStart: () -> Unit = {}, mo
         drawRoundRect(C.s2, Offset.Zero, size, rr)
         drawRoundRect(C.line, Offset.Zero, size, rr, style = Stroke(1f))
         val slotH = max(4.dp.toPx(), h * 0.12f)
-        drawRoundRect(Color(0xFF05060A), Offset(th / 2, (h - slotH) / 2), Size(travel, slotH), CornerRadius(slotH / 2))
+        drawRoundRect(C.well, Offset(th / 2, (h - slotH) / 2), Size(travel, slotH), CornerRadius(slotH / 2))
         drawLine(Color(0x55FFFFFF), Offset(size.width / 2, h * 0.2f), Offset(size.width / 2, h * 0.8f), 1f)
         val x = value * travel
-        drawRoundRect(Brush.horizontalGradient(listOf(Color(0xFF4A5170), Color(0xFF282D43)), x, x + th), Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()))
+        drawRoundRect(Brush.horizontalGradient(listOf(C.faderHi, C.faderLo), x, x + th), Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()))
         drawRoundRect(Color(0x33FFFFFF), Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()), style = Stroke(1f))
         val mix = Color(
             red = C.a.red + (C.b.red - C.a.red) * value, green = C.a.green + (C.b.green - C.a.green) * value, blue = C.a.blue + (C.b.blue - C.a.blue) * value
@@ -239,13 +253,17 @@ fun PressBox(
     haptic: Boolean = true,
     /** Pads need down-trigger; buttons/confirmations must wait for a confirmed up. */
     pressOnDown: Boolean = true,
+    label: String? = null,
     content: @Composable BoxScope.(pressed: Boolean) -> Unit,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val d by rememberUpdatedState(onDown); val u by rememberUpdatedState(onUp); val l by rememberUpdatedState(onLong)
     val hp = rememberHaptic()
     Box(
-        modifier.pointerInput(Unit) {
+        modifier.semantics {
+            role = Role.Button
+            if (!label.isNullOrBlank()) contentDescription = label
+        }.pointerInput(Unit) {
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false)
                 pressed = true
@@ -278,7 +296,7 @@ fun PillButton(
     text: String, on: Boolean, color: Color, modifier: Modifier = Modifier, solid: Boolean = false,
     onClick: () -> Unit,
 ) {
-    PressBox(modifier.clip(RoundedCornerShape(12.dp)), onUp = onClick, pressOnDown = false) { pressed ->
+    PressBox(modifier.clip(RoundedCornerShape(12.dp)), onUp = onClick, pressOnDown = false, label = text) { pressed ->
         val bg = when {
             solid && on -> color
             on -> color.copy(alpha = 0.18f)
@@ -299,8 +317,9 @@ fun PillButton(
 fun Chip(text: String, on: Boolean, color: Color = C.fx, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val cb by rememberUpdatedState(onClick)
     PressBox(
-        modifier.clip(RoundedCornerShape(9.dp)).background(if (on) color else C.s2),
-        onUp = { cb() }, pressOnDown = false, haptic = false,
+        modifier.clip(RoundedCornerShape(9.dp)).background(if (on) color else C.s2)
+            .semantics { selected = on },
+        onUp = { cb() }, pressOnDown = false, haptic = false, label = text,
     ) { _ ->
         Box(contentAlignment = Alignment.Center) {
             Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 4.dp, vertical = 5.dp), maxLines = 1, softWrap = false)
@@ -309,11 +328,12 @@ fun Chip(text: String, on: Boolean, color: Color = C.fx, modifier: Modifier = Mo
 }
 
 @Composable
-fun Toggle(on: Boolean, onChange: (Boolean) -> Unit, color: Color = C.a) {
+fun Toggle(on: Boolean, onChange: (Boolean) -> Unit, color: Color = C.a, label: String = "Toggle") {
     val cur by rememberUpdatedState(on)
     val cb by rememberUpdatedState(onChange)
     Box(
         Modifier.size(44.dp, 26.dp).clip(RoundedCornerShape(13.dp)).background(if (on) color.copy(alpha = .9f) else C.s4)
+            .semantics { role = Role.Switch; contentDescription = label; stateDescription = if (on) "On" else "Off" }
             .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); val up = waitForUpOrCancellation(); if (up != null) cb(!cur) } }
     ) {
         Box(Modifier.padding(3.dp).size(20.dp).offset(x = if (on) 18.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(Color.White))
@@ -334,7 +354,7 @@ fun VuMeter(level: () -> Float, tick: State<Long>, modifier: Modifier = Modifier
         for (i in 0 until segs) {
             val y = size.height - (i + 1) * sh - i * gap
             val col = when { i >= segs - 2 -> C.bad; i >= segs - 5 -> C.fx; else -> C.ok }
-            drawRoundRect(if (i < on) col else Color(0xFF1A1E2B), Offset(0f, y), Size(size.width, sh), CornerRadius(1.5f))
+            drawRoundRect(if (i < on) col else C.meterOff, Offset(0f, y), Size(size.width, sh), CornerRadius(1.5f))
         }
     }
 }

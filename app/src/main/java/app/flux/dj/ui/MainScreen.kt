@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import kotlinx.coroutines.delay
 
@@ -38,9 +39,10 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(c) {
         var last = 0L
         while (true) {
+            if (!c.needsPolling()) { delay(200); continue }
             androidx.compose.runtime.withFrameNanos { t ->
                 if (t - last > 13_000_000L) { last = t; c.poll() }
             }
@@ -74,7 +76,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
 
         c.pendingLoad?.let { (dk, item) ->
             val col = C.deck(dk)
-            Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.cancelLoad() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(C.scrim).pointerInput2 { c.cancelLoad() }, contentAlignment = Alignment.Center) {
                 Column(
                     Modifier.width(420.dp).clip(RoundedCornerShape(20.dp)).background(C.s1).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(20.dp)).pointerInput2 { }.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -90,7 +92,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
         }
         if (c.aligning) AlignScreen(c)
         c.rbReport?.let { r ->
-            Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.rbReport = null }, contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(C.scrim).pointerInput2 { c.rbReport = null }, contentAlignment = Alignment.Center) {
                 Column(
                     Modifier.width(520.dp).heightIn(max = 560.dp).clip(RoundedCornerShape(20.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(20.dp)).pointerInput2 { }.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -112,7 +114,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
             }
         }
         c.pendingRemove?.let { item ->
-            Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.cancelRemove() }, contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(C.scrim).pointerInput2 { c.cancelRemove() }, contentAlignment = Alignment.Center) {
                 Column(
                     Modifier.width(420.dp).clip(RoundedCornerShape(20.dp)).background(C.s1).border(1.dp, C.bad.copy(alpha = .5f), RoundedCornerShape(20.dp)).pointerInput2 { }.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -127,7 +129,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
             }
         }
         c.sampleEdit?.let { k ->
-            Box(Modifier.fillMaxSize().background(Color(0xAA000000)).pointerInput2 { c.sampleEdit = null }, contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(C.scrim).pointerInput2 { c.sampleEdit = null }, contentAlignment = Alignment.Center) {
                 Column(
                     Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(C.s1).border(1.dp, C.cue[4].copy(alpha = .6f), RoundedCornerShape(20.dp)).pointerInput2 { }.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)

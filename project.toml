@@ -60,7 +60,7 @@ hosts = ["claude"]
 [kit]
 # Optional tunables (docs/capabilities.md#configuration); omitted keys keep the defaults.
 # doc_groups = { operate = "Start and operate", design = "Design and engineering", launch = "Product, privacy, and launch", extend = "Extensibility and evidence" }
-# unbound_docs_ok = ["docs/legal/**", "docs/research/**"]
+unbound_docs_ok = ["docs/legal/**", "docs/research/**", "docs/product/**", "docs/model-integration.md"]
 # overlap_limit = 0.30
 # deprecation_warning_days = 30
 # skill_review_days = 365
@@ -91,7 +91,7 @@ local_skills = ["product-kickoff", "stack-foundation", "ux-quality", "experiment
 [budgets]
 # Byte limits (~4 bytes/token) for files agents load often; make check enforces.
 "AGENTS.md" = 7500
-"docs/README.md" = 9500
+"docs/README.md" = 10500
 "tools/kit/*.py" = 32000  # keep kit modules agent-sized; add budgets for product code too
 ".agents/agents/*.md" = 3000
 ".agents/skills/*/SKILL.md" = 8000

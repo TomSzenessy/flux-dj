@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.flux.dj.*
 import app.flux.dj.Controller
 import app.flux.dj.audio.*
 import kotlin.math.*
@@ -91,11 +92,11 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                     ) { Text(if (i == 0) "A" else "B", style = T.tab.copy(color = Color.Black, fontWeight = FontWeight.ExtraBold)) }
                     // LOAD / eject button
                     Box(
-                        Modifier.size(34.dp, 26.dp).clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(8.dp)).pointerInput2 { onOpenLibrary() },
+                        Modifier.size(34.dp, 26.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(8.dp)).pointerInput2 { onOpenLibrary() },
                         contentAlignment = Alignment.Center
                     ) { EjectIcon(col) }
                     if (u.loaded) Box(
-                        Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(if (u.gridEdit) C.fx else Color(0x99000000))
+                        Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(if (u.gridEdit) C.fx else C.scrimSoft)
                             .border(1.dp, if (u.gridEdit) C.fx else C.line, RoundedCornerShape(8.dp))
                             .pointerInput2 { if (u.gridEdit) c.gridDone(i) else c.gridOpen(i) }.padding(horizontal = 8.dp),
                         contentAlignment = Alignment.Center
@@ -104,7 +105,7 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                         val badge = when (u.analysisSource) { "rekordbox" -> "RB"; "manual" -> "✎ GRID"; else -> "LOCAL" }
                         val bc = if (u.analysisSource == "flux") C.mu else C.fx
                         Box(
-                            Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(Color(0x99000000))
+                            Modifier.height(26.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft)
                                 .border(1.dp, bc.copy(alpha = .5f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp),
                             contentAlignment = Alignment.Center
                         ) { Text(badge, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = bc, fontWeight = FontWeight.Bold)) }
@@ -112,7 +113,7 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                     Column(Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(); val up = waitForUpOrCancellation(); if (up != null) onOpenLibrary() } }
-                        .background(Color(0x66000000)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        .background(C.scrimFaint).padding(horizontal = 6.dp, vertical = 2.dp)) {
                         Text(u.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp), maxLines = 1)
                         val sub = buildString {
                             if (u.keyText.isNotEmpty()) append(u.keyText)
@@ -390,7 +391,7 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
     val col = C.deck(i)
     val path = remember { Path() }
     Canvas(
-        modifier.background(Color(0xFF0A0B10)).pointerInput(i) {
+        modifier.background(C.deep).pointerInput(i) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 val frames = (d.track?.frames ?: 0).toDouble()
@@ -451,7 +452,7 @@ private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: 
 
 @Composable
 private fun ZoomBtn(label: String, onClick: () -> Unit) {
-    Box(Modifier.size(30.dp, 24.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xAA000000)).border(1.dp, C.line, RoundedCornerShape(8.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(30.dp, 24.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
         Text(label, style = T.tab.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
     }
 }

@@ -1,5 +1,11 @@
 # FLUX — a touch-first DJ app for Android
 
+> **Historical design brief (October 2026).** This is the original rationale,
+> not the current status. `README.md` owns the shipped feature list and GitHub
+> Issues own live work. Cloud sources (Plex/Drive) and the KEY pad mode shipped
+> after this brief; the "pitch play" wording below is the earlier name for that
+> key-shift mode.
+
 Design brief: everything on the Pioneer DJ / AlphaTheta **DDJ-FLX4** (rekordbox + Serato layout), rebuilt for glass.
 Minimal at rest, deep on demand. Landscape, tablet-first, phone-capable.
 
