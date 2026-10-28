@@ -47,31 +47,33 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
                 if (!rim) {
                     d.scratchBegin()
                     var target = d.pos
-                    drag(down.id) { ch ->
-                        val a = atan2(ch.position.y - cy, ch.position.x - cx)
-                        var da = a - lastAng
-                        if (da > PI) da -= (2 * PI).toFloat() else if (da < -PI) da += (2 * PI).toFloat()
-                        lastAng = a
-                        target += da / (2 * PI) * FRAMES_PER_REV
-                        d.scratchTo(target)
-                        ch.consume()
-                    }
-                    d.scratchEnd()
+                    try {
+                        drag(down.id) { ch ->
+                            val a = atan2(ch.position.y - cy, ch.position.x - cx)
+                            var da = a - lastAng
+                            if (da > PI) da -= (2 * PI).toFloat() else if (da < -PI) da += (2 * PI).toFloat()
+                            lastAng = a
+                            target += da / (2 * PI) * FRAMES_PER_REV
+                            d.scratchTo(target)
+                            ch.consume()
+                        }
+                    } finally { d.scratchEnd() }
                 } else {
                     var lastT = System.nanoTime(); var vel = 0f
-                    drag(down.id) { ch ->
-                        val a = atan2(ch.position.y - cy, ch.position.x - cx)
-                        var da = a - lastAng
-                        if (da > PI) da -= (2 * PI).toFloat() else if (da < -PI) da += (2 * PI).toFloat()
-                        lastAng = a
-                        val now = System.nanoTime(); val dt = ((now - lastT) / 1e9f).coerceAtLeast(0.004f); lastT = now
-                        val w = da / dt
-                        vel += (w - vel) * 0.4f
-                        val nominal = (2 * PI / 1.8).toFloat()
-                        d.bend = ((vel - nominal) / nominal * 0.12f).coerceIn(-0.2f, 0.2f)
-                        ch.consume()
-                    }
-                    d.bend = 0f
+                    try {
+                        drag(down.id) { ch ->
+                            val a = atan2(ch.position.y - cy, ch.position.x - cx)
+                            var da = a - lastAng
+                            if (da > PI) da -= (2 * PI).toFloat() else if (da < -PI) da += (2 * PI).toFloat()
+                            lastAng = a
+                            val now = System.nanoTime(); val dt = ((now - lastT) / 1e9f).coerceAtLeast(0.004f); lastT = now
+                            val w = da / dt
+                            vel += (w - vel) * 0.4f
+                            val nominal = (2 * PI / 1.8).toFloat()
+                            d.bend = ((vel - nominal) / nominal * 0.12f).coerceIn(-0.2f, 0.2f)
+                            ch.consume()
+                        }
+                    } finally { d.bend = 0f }
                 }
             }
         }

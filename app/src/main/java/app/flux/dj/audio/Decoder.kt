@@ -10,6 +10,9 @@ import java.nio.ByteOrder
 /** Decodes any Android-supported audio file to 44.1 kHz interleaved stereo PCM16. */
 object Decoder {
     private const val MAX_SECONDS = 12 * 60
+    private const val START_SECONDS = 30
+    /** Give up when neither the extractor nor the codec made progress for this long. */
+    private const val STALL_NS = 30_000_000_000L
 
     /** [window] = decode only ~80 s from the middle of the file (for fast library indexing). */
     fun decode(
@@ -49,11 +52,14 @@ object Decoder {
             if (window && durUs > 120_000_000L) ex.seekTo(durUs / 2 - 40_000_000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             var inRate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var inCh = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            if (inCh <= 0 || inRate <= 0) return null
             codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
             codec.configure(fmt, null, null, 0)
             codec.start()
 
-            var out = ShortArray(maxOf(SR * 2 * 30, ((durUs / 1_000_000.0 + 2) * SR * 2).toInt().coerceAtMost(SR * 2 * (if (window) 80 else MAX_SECONDS))))
+            val limit = SR * 2 * (if (window) 80 else MAX_SECONDS)
+            // Start small and grow: preallocating the whole file cost ~42 MB for a 4-minute track.
+            var out = ShortArray(minOf(limit, SR * 2 * START_SECONDS))
             var outLen = 0
             var stream: Track? = null
             // resampler state
@@ -62,16 +68,21 @@ object Decoder {
             val info = MediaCodec.BufferInfo()
             var inDone = false
             var outDone = false
-            val limit = SR * 2 * (if (window) 80 else MAX_SECONDS)
             var chunk = ShortArray(8192)
+            var hitLimit = false
             fun ensure(n: Int): Boolean {
                 if (outLen + n <= out.size) return true
-                if (out.size >= limit) { outDone = true; return false }
+                if (outLen + n > limit || out.size >= limit) { outDone = true; hitLimit = true; return false }
                 out = out.copyOf(minOf(limit, maxOf(out.size * 3 / 2, outLen + n)))
-                stream?.let { st -> st.pcm = out; st.frames = out.size / 2 }
+                stream?.let { st -> st.pcm = out; st.frames = outLen / 2; st.available = outLen / 2 }
                 return true
             }
+            var lastProgress = System.nanoTime()
             while (!outDone) {
+                if (System.nanoTime() - lastProgress > STALL_NS) {
+                    android.util.Log.w("FLUX", "decode stalled for $uri")
+                    return null
+                }
                 var progressed = false
                 // feed every free input buffer without waiting
                 while (!inDone) {
@@ -87,6 +98,7 @@ object Decoder {
                         codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0)
                         if (durUs > 0) onProgress((ex.sampleTime.toFloat() / durUs).coerceIn(0f, 1f))
                         ex.advance()
+                        lastProgress = System.nanoTime()
                     }
                 }
                 // drain every ready output buffer; only block briefly when nothing moved
@@ -103,6 +115,7 @@ object Decoder {
                     if (oi < 0) continue
                     val ob = codec.getOutputBuffer(oi)!!
                     ob.order(ByteOrder.LITTLE_ENDIAN)
+                    ob.position(info.offset)
                     val total = info.size / 2
                     if (chunk.size < total) chunk = ShortArray(total)
                     ob.asShortBuffer().get(chunk, 0, total)
@@ -140,11 +153,17 @@ object Decoder {
                         pl = chunk[a].toFloat(); pr = if (inCh > 1) chunk[a + 1].toFloat() else pl
                     }
                     codec.releaseOutputBuffer(oi, false)
+                    lastProgress = System.nanoTime()
                     if (onStream != null && !window) {
                         val st = stream
                         if (st == null && outLen >= SR * 2) {
-                            stream = Track(id, title, artist, out).also { s -> s.complete = false; s.available = outLen / 2; onStream(s) }
-                        } else if (st != null) st.available = outLen / 2
+                            stream = Track(id, title, artist, out).also { s ->
+                                s.complete = false
+                                s.frames = outLen / 2
+                                s.available = outLen / 2
+                                onStream(s)
+                            }
+                        } else if (st != null) { st.frames = outLen / 2; st.available = outLen / 2 }
                     }
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outDone = true
                 }
@@ -153,10 +172,11 @@ object Decoder {
             val st = stream
             if (st != null) {
                 // keep the same array (the deck may be playing it); just publish the true length
-                st.pcm = out; st.frames = outLen / 2; st.available = outLen / 2; st.complete = true
+                st.pcm = out; st.frames = outLen / 2; st.available = outLen / 2
+                st.complete = true; st.truncated = hitLimit
                 return st
             }
-            return Track(id, title, artist, if (outLen == out.size) out else out.copyOf(outLen))
+            return Track(id, title, artist, if (outLen == out.size) out else out.copyOf(outLen)).also { it.truncated = hitLimit }
         } catch (e: Exception) {
             android.util.Log.w("FLUX", "decode failed for $uri: ${e.javaClass.simpleName}: ${e.message}", e)
             return null

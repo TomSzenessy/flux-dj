@@ -169,6 +169,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     var recording by mutableStateOf(false)
     var recSeconds by mutableIntStateOf(0)
     var recSaved by mutableStateOf<String?>(null)
+    var recSaving by mutableStateOf(false)
     var fxOn by mutableStateOf(false)
     var fxType by mutableStateOf(BeatFx.ECHO)
     var fxDiv by mutableFloatStateOf(0.5f)
@@ -332,7 +333,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
         if (previewId != null && !previewLoading) {
             val pt = engine.previewTrack
             if (pt != null) {
-                previewFrac = (engine.previewPos / pt.frames).toFloat()
+                previewFrac = (engine.previewPos / pt.decodedFrames.coerceAtLeast(1)).toFloat()
                 val sec = (engine.previewPos / SR).toInt()
                 previewTime = String.format("%d:%02d / %d:%02d", sec / 60, sec % 60, pt.durationSec.toInt() / 60, pt.durationSec.toInt() % 60)
             }
@@ -363,8 +364,21 @@ class Controller(app: Application) : AndroidViewModel(app) {
         leader = engine.leader()
         val mb = engine.masterBpm()
         masterBpm = if (mb > 0) String.format("%.1f", mb) else "–"
+        val wasSaving = recSaving
         recording = engine.recorder.active
+        recSaving = engine.recorder.saving
         recSeconds = engine.recorder.seconds
+        if (wasSaving && !recSaving) {
+            val f = engine.recorder.lastFile
+            val err = engine.recorder.error
+            val drops = engine.recorder.dropped
+            recSaved = f
+            toast = when {
+                f != null && drops > 0 -> "Saved $f · $drops block(s) dropped"
+                f != null -> "Saved $f"
+                else -> "Recording failed${if (err != null) ": $err" else ""}"
+            }
+        }
         if (engine.clip) { clip = true; engine.clip = false } else if (clip && tick.longValue % 90L == 0L) clip = false
         updateMatch()
         if (tick.longValue % 75L == 0L) refreshNext()
@@ -488,8 +502,9 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun doSamplerVol(v: Float) { samplerVol = v; engine.samplerVol = v }
 
     fun toggleRecord() {
-        if (engine.recorder.active) { engine.recorder.stop(); recSaved = engine.recorder.lastFile; toast = "Saved ${engine.recorder.lastFile ?: "recording"}" }
-        else { engine.recorder.start(); recSaved = null }
+        val r = engine.recorder
+        if (r.active) { r.stop(); toast = "Saving the recording…" }
+        else if (!r.saving) { r.start(); recSaved = null; toast = "Recording the master mix" }
     }
 
     // ------------------------------------------------------------------ outputs

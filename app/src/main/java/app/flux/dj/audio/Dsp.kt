@@ -71,12 +71,12 @@ class DelayLine(val size: Int) {
     fun readL(d: Float) = rd(l, d)
     fun readR(d: Float) = rd(r, d)
     private fun rd(buf: FloatArray, d: Float): Float {
-        var p = w - d
-        while (p < 0) p += size
-        val i = p.toInt(); val f = p - i
-        val i0 = if (i >= size) i - size else i
-        val i1 = if (i0 + 1 == size) 0 else i0 + 1
-        return buf[i0] * (1 - f) + buf[i1] * f
+        if (size <= 0 || !d.isFinite()) return 0f
+        var p = (w - d) % size
+        if (p < 0f) p += size
+        val i = p.toInt().coerceIn(0, size - 1); val f = p - i
+        val i1 = if (i + 1 == size) 0 else i + 1
+        return buf[i] * (1 - f) + buf[i1] * f
     }
 }
 
@@ -132,28 +132,30 @@ class ColorFxUnit {
                 }
             }
             ColorFx.ECHO -> {
+                if (n > tmpL.size) return
                 val active = d > 0.02f
-                if (!active) { tail += n; if (tail > SR * 3) return } else tail = 0
+                if (!active) { tail += n; if (tail > SR * 3) { java.util.Arrays.fill(echo.l, 0f); java.util.Arrays.fill(echo.r, 0f); return } } else tail = 0
+                val fade = if (active) 1f else (1f - tail.toFloat() / (SR * 3)).coerceIn(0f, 1f)
                 val target = (60f / max(60f, bpm)) * 0.75f * SRF
                 val fb = 0.55f
-                var i = 0
-                while (i < n) {
+                for (i in 0 until n) {
                     delay += (target - delay) * 0.0006f
                     val dl = echo.readL(delay); val dr = echo.readR(delay)
                     echoLpL += 0.45f * (dl - echoLpL); echoLpR += 0.45f * (dr - echoLpR)
                     val inL = if (active) l[i] * min(1f, d * 1.6f) else 0f
                     val inR = if (active) r[i] * min(1f, d * 1.6f) else 0f
                     echo.write(inL + echoLpL * fb, inR + echoLpR * fb)
-                    l[i] += dl * 0.9f; r[i] += dr * 0.9f
-                    i++
+                    l[i] += dl * 0.9f * fade; r[i] += dr * 0.9f * fade
                 }
             }
             ColorFx.SPACE -> {
+                if (n > tmpL.size) return
                 val active = d > 0.02f
-                if (!active) { tail += n; if (tail > SR * 4) return } else tail = 0
+                if (!active) { tail += n; if (tail > SR * 4) { java.util.Arrays.fill(tmpL, 0f); java.util.Arrays.fill(tmpR, 0f); return } } else tail = 0
+                val fade = if (active) 1f else (1f - tail.toFloat() / (SR * 4)).coerceIn(0f, 1f)
                 for (i in 0 until n) { tmpL[i] = if (active) l[i] * min(1f, d * 1.4f) else 0f; tmpR[i] = if (active) r[i] * min(1f, d * 1.4f) else 0f }
                 rev.process(tmpL, tmpR, n, 0.9f)
-                for (i in 0 until n) { l[i] += tmpL[i]; r[i] += tmpR[i] }
+                for (i in 0 until n) { l[i] += tmpL[i] * fade; r[i] += tmpR[i] * fade }
             }
         }
     }
@@ -176,8 +178,10 @@ class Reverb {
     fun process(l: FloatArray, r: FloatArray, n: Int, room: Float) {
         val fb = 0.72f + room * 0.2f
         val damp = 0.35f
+        // Keep the wet gain roughly independent of feedback: six combs each with 1/(1-fb) gain.
+        val inGain = (1f - fb) / 6f
         for (i in 0 until n) {
-            val inp = (l[i] + r[i]) * 0.5f * 0.2f
+            val inp = (l[i] + r[i]) * 0.5f * 0.2f * inGain
             var oL = 0f; var oR = 0f
             for (c in 0 until 6) {
                 val bl = cL[c]; val bi = cLi[c]; val y = bl[bi]
@@ -216,7 +220,6 @@ class BeatFxBus {
     private var flFbL = 0f; private var flFbR = 0f
     private var lfo = 0.0
     private val apL = FloatArray(4); private val apR = FloatArray(4)
-    private val apZl = FloatArray(4); private val apZr = FloatArray(4)
     private var gateEnv = 1f
     private var holdL = 0f; private var holdR = 0f; private var holdC = 0
     private var gPhase = 0.0
@@ -253,16 +256,18 @@ class BeatFxBus {
             }
             BeatFx.PHASER -> {
                 val inc = 2 * PI / (beatFrames * 8.0 * div.coerceAtLeast(0.25f))
+                val wet = (0.35f + 0.65f * depth).coerceIn(0f, 1f)
                 for (i in 0 until n) {
                     lfo += inc; if (lfo > 2 * PI) lfo -= 2 * PI
-                    val f = 300.0 * 10.0.pow(0.5 * (0.5 + 0.5 * sin(lfo))) * (1 + 0 * depth)
+                    val f = 300.0 * 10.0.pow(0.5 * (0.5 + 0.5 * sin(lfo))) * (0.5 + depth)
                     val k = ((tan(PI * f / SR) - 1) / (tan(PI * f / SR) + 1)).toFloat()
                     var xl = inL[i]; var xr = inR[i]
                     for (s in 0 until 4) {
                         val yl = k * xl + apL[s]; apL[s] = xl - k * yl; xl = yl
                         val yr = k * xr + apR[s]; apR[s] = xr - k * yr; xr = yr
                     }
-                    oL[i] = xl; oR[i] = xr
+                    oL[i] = inL[i] * (1f - wet) + xl * wet
+                    oR[i] = inR[i] * (1f - wet) + xr * wet
                 }
             }
             BeatFx.GATE -> {
@@ -290,8 +295,10 @@ class BeatFxBus {
 
 /** Simple fixed-size stereo delay used to align master and cue outputs. */
 class AlignDelay(maxFrames: Int) {
-    private val d = DelayLine(maxFrames + 2)
-    var frames = 0
+    private val cap = maxFrames.coerceAtLeast(1)
+    private val d = DelayLine(cap + 2)
+    var frames: Int = 0
+        set(value) { field = value.coerceIn(0, cap) }
     fun process(l: FloatArray, r: FloatArray, n: Int) {
         if (frames <= 0) { for (i in 0 until n) d.write(l[i], r[i]); return }
         val f = frames.toFloat()

@@ -18,9 +18,14 @@ state. There is no second process, no service and no native library.
 
 ## Seams
 
-- **UI ↔ engine:** the engine exposes immutable snapshots plus commands; the UI
-  polls once per frame and never blocks the render thread. A command that
-  allocates must run off the mixer thread.
+- **UI ↔ engine:** the engine exposes volatile state snapshots plus commands; the
+  UI polls once per frame and never blocks the render thread. A command that
+  allocates runs off the mixer thread. Seeks are published through one atomic
+  slot (`Deck.seekReq`) and consumed once per block, so a UI seek cannot be lost.
+- **Streaming decode:** a track becomes playable before it is complete. `Track`
+  keeps `available` (decoded) separate from `frames`; consumers use
+  `decodedFrames`, and the mixer clamps every block to the `pcm` snapshot it
+  actually holds.
 - **Deck ↔ track:** beat maths lives on `Track` (`beatIndex`, `beatPos`,
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
   to the deck, the UI and sync.

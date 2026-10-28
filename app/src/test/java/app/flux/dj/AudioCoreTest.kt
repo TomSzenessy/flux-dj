@@ -209,3 +209,80 @@ class SyncTest {
         assertEquals("unknown bpm is neutral", 1.0, syncMatchRatio(0.0, 128.0, 1.0), 1e-9)
     }
 }
+
+class TransportRegressionTest {
+    @Test fun renderNeverIndexesPastItsPcmSnapshot() {
+        // The decoder can publish a larger frame count while the deck still holds the old array.
+        val t = Track("grow", "grow", "", ShortArray(200))
+        t.complete = true
+        t.frames = 1000
+        t.available = 1000
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.play()
+        repeat(10) { d.render(BLOCK, l, r) }
+        assertTrue("playhead clamped to the local array", d.pos <= 100.0)
+    }
+
+    @Test fun tinyTrackRendersSilenceInsteadOfThrowing() {
+        val t = Track("tiny", "tiny", "", ShortArray(8))
+        t.frames = 4
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.play()
+        d.render(BLOCK, l, r)
+        for (k in 0 until BLOCK) { assertEquals(0f, l[k], 0f); assertEquals(0f, r[k], 0f) }
+    }
+
+    @Test fun loopPastTheTrackEndKeepsPlaying() {
+        val t = Track("end", "end", "", ShortArray(40_000))
+        t.bpm = 120f; t.firstBeat = 0.0; t.analyzed = true
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.play(); d.seekNow(19_000.0)
+        d.loopSet(4f, 19_000.0)
+        assertTrue("loop is active", d.loopOn)
+        repeat(80) { d.render(BLOCK, l, r) }
+        assertTrue("deck keeps playing", d.playing)
+        assertTrue("inside the clamped loop", d.pos >= d.loopIn && d.pos <= d.loopOut + 1)
+    }
+
+    @Test fun streamingDurationUsesDecodedFrames() {
+        val t = Track("stream", "stream", "", ShortArray(2000))
+        t.complete = false
+        t.available = 500
+        t.frames = 2000
+        assertEquals(500.0 / SR, t.durationSec, 1e-9)
+        t.complete = true
+        assertEquals(2000.0 / SR, t.durationSec, 1e-9)
+    }
+
+    @Test fun tempoMapIgnoresInvalidMarkers() {
+        val t = Track("map", "map", "", ShortArray(1000))
+        t.setTempoMap(doubleArrayOf(0.0, 1.0, 2.0), doubleArrayOf(120.0, 0.0, 128.0), 1)
+        assertTrue("finite dominant bpm", t.bpm.isFinite() && t.bpm > 0f)
+        assertTrue("finite beat position", t.beatPos(10.0).isFinite())
+    }
+}
+
+class AnalysisRegressionTest {
+    @Test fun silenceHasNoTempoOrKey() {
+        val t = Track("silence", "silence", "", ShortArray(SR * 20 * 2))
+        Analyzer.waveform(t)
+        Analyzer.rhythmAndKey(t)
+        Analyzer.profile(t)
+        assertEquals("no invented bpm", 0f, t.bpm, 0f)
+        assertEquals("no invented key", -1, t.key)
+        assertEquals("beatless", "Beatless", t.pattern)
+    }
+
+    @Test fun outOfPhaseStereoStillHasAWaveform() {
+        val frames = SR * 20
+        val pcm = ShortArray(frames * 2)
+        for (i in 0 until frames) { pcm[i * 2] = 12_000; pcm[i * 2 + 1] = -12_000 }
+        val t = Track("phase", "phase", "", pcm)
+        Analyzer.waveform(t)
+        assertTrue("waveform is not flat", t.wave!!.any { (it.toInt() and 255) > 0 })
+        assertTrue("rms is audible", t.rms > 0.01f)
+    }
+}

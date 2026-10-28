@@ -5,6 +5,10 @@ import kotlin.math.*
 /** Off-thread track analysis: 3-band waveform, BPM + beat grid, musical key, loudness. */
 object Analyzer {
 
+    /** Mono downmix that keeps one channel when the pair is out of phase instead of cancelling it. */
+    private fun downmix(l: Float, r: Float): Float =
+        if (l * r < 0f) { if (abs(l) >= abs(r)) l else r } else (l + r) * 0.5f
+
     /** Fast pass (~100 ms): waveform + overview + loudness. */
     fun waveform(t: Track) {
         val n = t.frames
@@ -21,7 +25,7 @@ object Analyzer {
         for (b in 0 until bins) {
             var pl = 0f; var pm = 0f; var ph = 0f
             for (k in 0 until BIN) {
-                val m = (pcm[i * 2] + pcm[i * 2 + 1]) * (0.5f / 32768f)
+                val m = downmix(pcm[i * 2].toFloat(), pcm[i * 2 + 1].toFloat()) * (1f / 32768f)
                 lp1 += a1 * (m - lp1)
                 lp2 += a2 * (m - lp2)
                 val lo = lp1; val mi = lp2 - lp1; val hi = m - lp2
@@ -132,7 +136,7 @@ object Analyzer {
             lowE[i] = lo
         }
         val flux = onset(e, 12)
-        val lowFlux = onset(lowE, 12)
+        if (flux.all { it <= 0f }) { t.bpm = 0f; t.firstBeat = 0.0; return }
         val minLag = 441f * 60f / 180f
         val maxLag = 441f * 60f / 70f
         var bestLag = 0f; var best = -1f
@@ -211,9 +215,9 @@ object Analyzer {
         val x = FloatArray(len)
         for (i in 0 until len) {
             val b = (start + i) * 4
-            var s = 0
-            for (k in 0 until 4) s += t.pcm[(b + k) * 2] + t.pcm[(b + k) * 2 + 1]
-            x[i] = s / (8f * 32768f)
+            var s = 0f
+            for (k in 0 until 4) s += downmix(t.pcm[(b + k) * 2].toFloat(), t.pcm[(b + k) * 2 + 1].toFloat())
+            x[i] = s / (4f * 32768f)
         }
         val chroma = DoubleArray(12)
         val frame = 4096
@@ -236,6 +240,7 @@ object Analyzer {
             }
             f0 += hop
         }
+        if (chroma.all { it <= 0.0 }) return -1
         var best = -1.0; var bk = -1
         for (k in 0 until 12) {
             var cM = 0.0; var cm = 0.0

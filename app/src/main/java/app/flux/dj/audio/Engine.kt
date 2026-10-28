@@ -69,9 +69,9 @@ class Engine(private val ctx: Context) {
     @Volatile var previewToMaster = false
     @Volatile private var previewSeekReq = -1.0
     private var previewFade = 0
-    fun startPreview(t: Track, frac: Float) { previewTrack = t; previewSeekReq = (frac * t.frames).toDouble(); previewPlaying = true }
+    fun startPreview(t: Track, frac: Float) { previewTrack = t; previewSeekReq = (frac * t.decodedFrames).toDouble(); previewPlaying = true }
     fun stopPreview() { previewPlaying = false }
-    fun previewSeek(frac: Float) { val t = previewTrack ?: return; previewSeekReq = (frac.coerceIn(0f, 1f) * (t.frames - 2)).toDouble() }
+    fun previewSeek(frac: Float) { val t = previewTrack ?: return; previewSeekReq = (frac.coerceIn(0f, 1f) * (t.decodedFrames - 2).coerceAtLeast(1)).toDouble() }
 
     // Output routing
     @Volatile var outMode = OutMode.SINGLE
@@ -126,7 +126,7 @@ class Engine(private val ctx: Context) {
     private val ts = AudioTimestamp()
     private var calibPhase = 0
     /** One bar of drums at 120 BPM (kick every beat, hats between, clap on 2 & 4) for alignment. */
-    val calibLoop: FloatArray by lazy {
+    val calibLoop: FloatArray = run {
         // One beat per second: any output delay (< 0.5 s) is unambiguous — the nearest beat is the right one.
         // Beat 1 is a bright "ding", beats 2–4 a short low "tock", so you also hear where the bar starts.
         val beat = CALIB_BEAT; val loop = FloatArray(beat * 4)
@@ -152,18 +152,25 @@ class Engine(private val ctx: Context) {
 
     private var thread: Thread? = null
     private var cueThread: Thread? = null
-    private var trackM: AudioTrack? = null
-    private var trackC: AudioTrack? = null
+    @Volatile private var trackM: AudioTrack? = null
+    @Volatile private var trackC: AudioTrack? = null
     private val cueQ = ArrayBlockingQueue<FloatArray>(6)
     private val cuePool = Array(10) { FloatArray(BLOCK * 2) }   // reused: no allocation per block
     private var cuePoolIdx = 0
+    /** Control-plane work (buffer resizing) never runs on the real-time thread. */
+    private val control = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "flux-control").apply { isDaemon = true }
+    }
     @Volatile var routedCue: String = ""
-    private var fxCross = 0f
-    private var xfGainA = 1f; private var xfGainB = 0f
+    private val xg = FloatArray(2)
     private var fxLevelS = 0f
 
     // sampler voices
-    private class Voice { var data: FloatArray? = null; var p = 0; var g = 1f }
+    private class Voice {
+        @Volatile var data: FloatArray? = null
+        @Volatile var p = 0
+        @Volatile var g = 1f
+    }
     private val voices = Array(8) { Voice() }
     @Volatile private var voiceNext = 0
     fun triggerSample(i: Int) {
@@ -174,6 +181,8 @@ class Engine(private val ctx: Context) {
     // transition state (audio thread)
     private var tFrom = 0; private var tTo = 1
     private var tTotal = 0.0; private var tElapsed = 0.0; private var tXf0 = 0f; private var tXf1 = 1f
+    private var tFromLo = 0.5f; private var tFromHi = 0.5f
+    private var tToLo = 0.5f; private var tToHi = 0.5f
 
     val master_: Int get() = leader()
 
@@ -223,8 +232,9 @@ class Engine(private val ctx: Context) {
     @Volatile private var gen = 0
 
     @Synchronized fun start() {
-        if (running) return
+        if (running && thread?.isAlive == true) return
         running = true
+        outputError = null
         launchThreads()
     }
 
@@ -252,15 +262,15 @@ class Engine(private val ctx: Context) {
         try { trackM?.pause(); trackM?.flush() } catch (_: Exception) {}   // unblocks a blocking write()
         try { trackC?.pause(); trackC?.flush() } catch (_: Exception) {}
         cueThread?.interrupt()
-        thread?.join(1500); cueThread?.join(500)
+        val mixer = thread
+        val cue = cueThread
+        val mixerStopped = mixer == null || run { mixer.join(1500); !mixer.isAlive }
+        val cueStopped = cue == null || run { cue.join(500); !cue.isAlive }
         thread = null; cueThread = null
-        closeOutputs()
-    }
-
-    private fun closeOutputs() {
-        try { trackM?.stop(); trackM?.release() } catch (_: Exception) {}
-        try { trackC?.stop(); trackC?.release() } catch (_: Exception) {}
-        trackM = null; trackC = null
+        // Only release a track whose writer is gone; releasing under a blocked write is native UB.
+        if (mixerStopped) { try { trackM?.stop(); trackM?.release() } catch (_: Exception) {}; trackM = null }
+        if (cueStopped) { try { trackC?.stop(); trackC?.release() } catch (_: Exception) {}; trackC = null }
+        if (!mixerStopped || !cueStopped) outputError = "An audio thread did not stop in time; it will be replaced"
     }
 
     private fun devices(): Array<AudioDeviceInfo> =
@@ -372,7 +382,6 @@ class Engine(private val ctx: Context) {
         outputError = null
         routedMaster = ""
         written = 0L; outLatencyMs = 0f
-        shrinkTick = 0
         routedCue = ""
         trackM = makeTrack(masterDeviceId) { routedMaster = it }
         if (outMode == OutMode.DUAL) {
@@ -401,20 +410,30 @@ class Engine(private val ctx: Context) {
     // ------------------------------------------------------------------ render loop
     private fun loop(g: Int) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+        val tm = trackM ?: run { running = false; return }
         var n = 0
         var lastU = 0
-        while (running && gen == g) {
-            render(BLOCK)
-            val tm = trackM ?: break
-            if (outMode == OutMode.DUAL) {
-                val blk = cuePool[cuePoolIdx]; cuePoolIdx = (cuePoolIdx + 1) % cuePool.size
-                System.arraycopy(outC, 0, blk, 0, BLOCK * 2)
-                if (!cueQ.offer(blk)) { cueQ.poll(); cueQ.offer(blk) }
+        try {
+            while (running && gen == g) {
+                render(BLOCK)
+                if (outMode == OutMode.DUAL) {
+                    val blk = cuePool[cuePoolIdx]; cuePoolIdx = (cuePoolIdx + 1) % cuePool.size
+                    System.arraycopy(outC, 0, blk, 0, BLOCK * 2)
+                    if (!cueQ.offer(blk)) { cueQ.poll(); cueQ.offer(blk) }
+                }
+                val wrote = tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
+                if (wrote < 0) {
+                    outputError = "Audio output failed (write ${wrote})"
+                    running = false
+                    break
+                }
+                written += BLOCK
+                if (++n % 64 == 0) lastU = tuneLatency(tm, lastU)
+                if (n % 32 == 0) measureLatency(tm)
             }
-            tm.write(outM, 0, BLOCK * 2, AudioTrack.WRITE_BLOCKING)
-            written += BLOCK
-            if (++n % 64 == 0) lastU = tuneLatency(tm, lastU)
-            if (n % 32 == 0) measureLatency(tm)
+        } catch (t: Throwable) {
+            outputError = "Audio engine stopped: ${t.javaClass.simpleName}: ${t.message}"
+            running = false
         }
     }
 
@@ -428,34 +447,32 @@ class Engine(private val ctx: Context) {
         } catch (_: Exception) {}
     }
 
-    /** Grow the playing buffer by two blocks whenever the device reported new underruns (glitches). */
-    private var shrinkTick = 0
+    /**
+     * Grow the playing buffer by two blocks whenever the device reported new underruns.
+     * The resize is applied on the control thread; the buffer is never halved back (that
+     * re-created the underrun it was reacting to), so latency stays at the last good size.
+     */
     private fun tuneLatency(t: AudioTrack, lastU: Int): Int {
-        if (Build.VERSION.SDK_INT < 26) return lastU
         val u = t.underrunCount
         if (u > lastU) {
-            val cap = t.bufferCapacityInFrames
-            if (t.bufferSizeInFrames < cap) t.bufferSizeInFrames = min(cap, t.bufferSizeInFrames + BLOCK * 2)
-            outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
-            return u
-        }
-        // No new underruns: walk the buffer back down so output latency (and the picture delay)
-        // stays low. Halving every few seconds is inaudible; a glitch instantly grows it again.
-        if (++shrinkTick % 8 == 0) {
-            val minFrames = BLOCK * 4
-            val next = max(minFrames, t.bufferSizeInFrames / 2)
-            if (next < t.bufferSizeInFrames) {
-                t.bufferSizeInFrames = next
-                outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
+            control.execute {
+                try {
+                    val cap = t.bufferCapacityInFrames
+                    if (t.bufferSizeInFrames < cap) {
+                        t.bufferSizeInFrames = min(cap, t.bufferSizeInFrames + BLOCK * 2)
+                        outputInfo = "buffer ${t.bufferSizeInFrames * 1000 / SR} ms"
+                    }
+                } catch (_: Exception) {}
             }
+            return u
         }
         return u
     }
 
-    private fun xfGains(x: Float, c: Curve): Pair<Float, Float> = when (c) {
-        Curve.SMOOTH -> Pair(cos(x * PI / 2).toFloat(), sin(x * PI / 2).toFloat())
-        Curve.SHARP -> Pair(min(1f, 2f * (1f - x)), min(1f, 2f * x))
-        Curve.CUT -> Pair(if (x > 0.96f) 0f else 1f, if (x < 0.04f) 0f else 1f)
+    private fun xfGains(x: Float, c: Curve): FloatArray = when (c) {
+        Curve.SMOOTH -> { xg[0] = cos(x * PI / 2).toFloat(); xg[1] = sin(x * PI / 2).toFloat(); xg }
+        Curve.SHARP -> { xg[0] = min(1f, 2f * (1f - x)); xg[1] = min(1f, 2f * x); xg }
+        Curve.CUT -> { xg[0] = if (x > 0.96f) 0f else 1f; xg[1] = if (x < 0.04f) 0f else 1f; xg }
     }
 
     private fun eqDb(v: Float): Double = if (v < 0.5f) -60.0 * (1.0 - 2.0 * v).pow(1.8) else (v - 0.5) * 12.0
@@ -474,6 +491,8 @@ class Engine(private val ctx: Context) {
                 tTotal = req * 60.0 / bpm * SR; tElapsed = 0.0
                 tXf0 = if (src == 0) 0f else 1f; tXf1 = 1f - tXf0
                 xfader = tXf0
+                tFromLo = chans[src].lo; tFromHi = chans[src].hi
+                tToLo = chans[to].lo; tToHi = chans[to].hi
                 val d = decks[to]
                 chans[to].lo = 0f
                 if (decks[src].syncOn) releaseSync(decks[src])   // one master at a time
@@ -485,8 +504,11 @@ class Engine(private val ctx: Context) {
             }
         }
         if (transitionActive) {
-            if (transCancel) { transitionActive = false }
-            else {
+            if (transCancel) {
+                restoreTransitionEq()
+                xfader = tXf0
+                transitionActive = false; transitionProgress = 0f
+            } else {
                 tElapsed += n
                 val p = (tElapsed / tTotal).toFloat().coerceIn(0f, 1f)
                 transitionProgress = p
@@ -498,7 +520,7 @@ class Engine(private val ctx: Context) {
                 if (p >= 1f) {
                     decks[tFrom].pause()
                     releaseSync(decks[tTo])
-                    chans[tFrom].lo = 0.5f; chans[tFrom].hi = 0.5f
+                    restoreTransitionEq()
                     transitionActive = false; transitionProgress = 0f
                 }
             }
@@ -540,8 +562,7 @@ class Engine(private val ctx: Context) {
         }
 
         // ---- decks -> channels
-        val (gA0, gB0) = xfGains(xfader, curve)
-        val xg = floatArrayOf(gA0, gB0)
+        val xf = xfGains(xfader, curve)
         java.util.Arrays.fill(mL, 0, n, 0f); java.util.Arrays.fill(mR, 0, n, 0f)
         java.util.Arrays.fill(cL, 0, n, 0f); java.util.Arrays.fill(cR, 0, n, 0f)
         java.util.Arrays.fill(fiL, 0, n, 0f); java.util.Arrays.fill(fiR, 0, n, 0f)
@@ -561,7 +582,7 @@ class Engine(private val ctx: Context) {
             c.fx.process(c.colorFx, c.color, d.currentBpm.takeIf { it > 0 } ?: mbpm, l, r, n)
             if (c.cue) for (k in 0 until n) { cL[k] += l[k]; cR[k] += r[k] }
             val fv = c.fader
-            val tgt = fv * fv * (if (fv > 0.98f) 1f else 1f) * xg[i]
+            val tgt = fv * fv * xf[i]
             val g0 = c.gain; val step = (tgt - g0) / n
             var gg = g0; var pk = 0f
             val asg = if (i == 0) fxA else fxB
@@ -669,15 +690,15 @@ class Engine(private val ctx: Context) {
                 for (k in 0 until n) { outM[k * 2] = l[k]; outM[k * 2 + 1] = r[k] }
             }
             OutMode.DUAL -> {
-                masterDelay.frames = max(0, offsetMs) * SR / 1000
-                cueDelay.frames = max(0, -offsetMs) * SR / 1000
+                masterDelay.frames = delayFrames(max(0, offsetMs))
+                cueDelay.frames = delayFrames(max(0, -offsetMs))
                 masterDelay.process(mL, mR, n); cueDelay.process(cL, cR, n)
                 for (k in 0 until n) { outM[k * 2] = mL[k]; outM[k * 2 + 1] = mR[k]; outC[k * 2] = cL[k]; outC[k * 2 + 1] = cR[k] }
             }
             OutMode.SPLIT -> {
                 // left channel = cue (headphones), right channel = master (PA/aux)
-                masterDelay.frames = max(0, offsetMs) * SR / 1000
-                cueDelay.frames = max(0, -offsetMs) * SR / 1000
+                masterDelay.frames = delayFrames(max(0, offsetMs))
+                cueDelay.frames = delayFrames(max(0, -offsetMs))
                 masterDelay.process(mL, mR, n); cueDelay.process(cL, cR, n)
                 for (k in 0 until n) {
                     outM[k * 2] = (cL[k] + cR[k]) * 0.5f
@@ -699,6 +720,15 @@ class Engine(private val ctx: Context) {
         outVolS = v1
     }
 
+    /** Clamp a millisecond delay to the alignment line's capacity (half a second). */
+    private fun delayFrames(ms: Int): Int = (ms.toLong() * SR / 1000L).coerceIn(0L, (SR / 2 - 2).toLong()).toInt()
+
+    /** Put the user's EQ values back after a transition finishes or is cancelled. */
+    private fun restoreTransitionEq() {
+        chans[tFrom].lo = tFromLo; chans[tFrom].hi = tFromHi
+        chans[tTo].lo = tToLo; chans[tTo].hi = tToHi
+    }
+
     private fun soft(x: Float): Float {
         val a = abs(x)
         return if (a < 0.8f) x else (if (x > 0) 1f else -1f) * (0.8f + 0.2f * tanh((a - 0.8f) / 0.2f))
@@ -708,19 +738,26 @@ class Engine(private val ctx: Context) {
 /** Records the master mix to Music/FLUX as 16-bit WAV. */
 class Recorder(private val ctx: Context) {
     @Volatile var active = false
+    /** True while the writer is draining/committing after [stop]; the UI must not start a second file. */
+    @Volatile var saving = false
     @Volatile var seconds = 0
     @Volatile var lastFile: String? = null
+    @Volatile var error: String? = null
+    /** Blocks dropped because the writer could not keep up; surfaced in the UI, never silent. */
+    @Volatile var dropped = 0
     private val q = ArrayBlockingQueue<ShortArray>(400)
+    private val pool = ArrayBlockingQueue<ShortArray>(16).apply { repeat(16) { put(ShortArray(BLOCK * 2)) } }
     private var thread: Thread? = null
 
     fun start() {
-        if (active) return
-        active = true; seconds = 0
+        if (active || saving) return
+        active = true; saving = true; seconds = 0; lastFile = null; error = null; dropped = 0
         val name = "FLUX_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date()) + ".wav"
         thread = Thread({
             var pfd: android.os.ParcelFileDescriptor? = null
             var uri: android.net.Uri? = null
             var out: FileOutputStream? = null
+            var ok = false
             try {
                 val res = ctx.contentResolver
                 if (Build.VERSION.SDK_INT >= 29) {
@@ -731,50 +768,65 @@ class Recorder(private val ctx: Context) {
                         put(MediaStore.Audio.Media.IS_PENDING, 1)
                     }
                     uri = res.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cv)
-                    pfd = res.openFileDescriptor(uri!!, "rw")
-                    out = FileOutputStream(pfd!!.fileDescriptor)
+                        ?: throw java.io.IOException("MediaStore refused the recording file")
+                    pfd = res.openFileDescriptor(uri, "rw")
+                        ?: throw java.io.IOException("Could not open the recording file")
+                    out = FileOutputStream(pfd.fileDescriptor)
                 } else {
                     val dir = java.io.File(ctx.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC), "FLUX"); dir.mkdirs()
                     out = FileOutputStream(java.io.File(dir, name))
                 }
-                val ch = out!!.channel
+                val ch = out.channel
                 ch.position(0); out.write(ByteArray(44))
                 var bytes = 0L
-                val bb = ByteBuffer.allocate(BLOCK * 4).order(ByteOrder.LITTLE_ENDIAN)
                 var frames = 0L
                 while (active || q.isNotEmpty()) {
                     val blk = q.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
-                    val bb2 = ByteBuffer.allocate(blk.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-                    bb2.asShortBuffer().put(blk)
-                    out.write(bb2.array()); bytes += blk.size * 2; frames += blk.size / 2
+                    val bb = ByteBuffer.allocate(blk.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                    bb.asShortBuffer().put(blk)
+                    out.write(bb.array()); bytes += blk.size * 2; frames += blk.size / 2
                     seconds = (frames / SR).toInt()
+                    pool.offer(blk)
                 }
                 ch.position(0)
                 out.write(wavHeader(bytes))
                 out.flush()
                 lastFile = "Music/FLUX/$name"
-            } catch (_: Exception) {
+                ok = bytes > 0
+                if (!ok) error = "The recording was empty"
+            } catch (e: Exception) {
+                error = e.message ?: e.javaClass.simpleName
             } finally {
                 try { out?.close() } catch (_: Exception) {}
                 try { pfd?.close() } catch (_: Exception) {}
                 if (uri != null && Build.VERSION.SDK_INT >= 29) {
-                    val cv = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
-                    try { ctx.contentResolver.update(uri, cv, null, null) } catch (_: Exception) {}
+                    if (ok) {
+                        val cv = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
+                        try { ctx.contentResolver.update(uri, cv, null, null) } catch (_: Exception) {}
+                    } else {
+                        try { ctx.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+                    }
                 }
+                active = false; saving = false
             }
         }, "flux-rec").also { it.start() }
     }
 
     fun push(l: FloatArray, r: FloatArray, n: Int) {
-        val s = ShortArray(n * 2)
-        for (i in 0 until n) {
-            s[i * 2] = (l[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
-            s[i * 2 + 1] = (r[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+        val s = pool.poll() ?: run { dropped++; return }
+        try {
+            for (i in 0 until n) {
+                s[i * 2] = (l[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+                s[i * 2 + 1] = (r[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+            }
+            if (!q.offer(s)) { dropped++; pool.offer(s) }
+        } catch (t: Throwable) {
+            dropped++; pool.offer(s)
         }
-        q.offer(s)
     }
 
-    fun stop() { active = false; thread?.join(1500); thread = null }
+    /** Signal stop; the writer drains and commits in the background, then clears [saving]. */
+    fun stop() { active = false }
 
     private fun wavHeader(dataLen: Long): ByteArray {
         val b = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
@@ -814,11 +866,14 @@ internal fun deckRatio(d: Deck): Double = if (d.syncOn) d.syncRatio else 1.0 + d
 internal fun syncTargetNow(f: Deck, l: Deck): Double =
     syncMatchRatio(nominalBpm(f), nominalBpm(l), deckRatio(l))
 
+/** Pitch ranges offered by the UI; reused by sync so it never allocates a fresh list. */
+private val PITCH_RANGES = floatArrayOf(0.06f, 0.10f, 0.16f, 0.50f)
+
 /** Widen the pitch range if the synced ratio does not fit, so SYNC off cannot snap the tempo. */
 internal fun ensurePitchRange(d: Deck, ratio: Double) {
     val need = abs(ratio - 1.0)
     if (need <= d.range) return
-    floatArrayOf(0.06f, 0.10f, 0.16f, 0.50f).firstOrNull { it >= need }?.let { d.range = it }
+    PITCH_RANGES.firstOrNull { it >= need }?.let { d.range = it }
 }
 
 /**

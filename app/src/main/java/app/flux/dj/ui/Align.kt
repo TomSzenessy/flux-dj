@@ -64,6 +64,10 @@ fun AlignScreen(c: Controller) {
             }
             if (showPicture) PictureLane(c, Modifier.fillMaxWidth().height(150.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(150.dp))
             val value = if (showPicture) c.visualTrimMs else c.offsetMs
+            fun nudge(delta: Int) {
+                if (c.outMode == OutMode.SINGLE || lane == 1) c.setVisualTrim(c.visualTrimMs + delta)
+                else c.setOffset((c.offsetMs + delta).coerceIn(-RANGE_MS, RANGE_MS))
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     if (showPicture) "Picture held back ${c.latencyMs} ms" + (if (value != 0) "  ·  fine-tune ${if (value > 0) "+" else ""}$value ms" else "")
@@ -74,9 +78,7 @@ fun AlignScreen(c: Controller) {
                     },
                     style = T.num.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
                 )
-                for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(36.dp).width(52.dp)) {
-                    if (showPicture) c.setVisualTrim(value + d) else c.setOffset((value + d).coerceIn(-RANGE_MS, RANGE_MS))
-                }
+                for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(36.dp).width(52.dp)) { nudge(d) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PillButton("Cancel", false, C.mu, Modifier.weight(1f).height(46.dp)) { c.cancelAlign() }
@@ -130,7 +132,9 @@ private val numPaint = android.graphics.Paint().apply { isAntiAlias = true; text
 /** Beat markers of the 1-per-second loop, positioned relative to [pos] (frames) around the centre line. */
 private fun DrawScope.beats(pos: Double, shiftFrames: Double, y: Float, laneH: Float, col: Color) {
     val w = size.width; val mid = w / 2
+    if (w <= 0f) return
     val framesPerPx = SR * WINDOW_MS / 1000f / w
+    if (framesPerPx <= 0f) return
     val first = floor((pos - mid * framesPerPx - shiftFrames) / CALIB_BEAT).toLong()
     var k = first
     while (true) {

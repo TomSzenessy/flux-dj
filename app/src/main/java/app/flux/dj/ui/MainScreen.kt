@@ -1,5 +1,6 @@
 package app.flux.dj.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,18 @@ enum class Sheet { NONE, LIBRARY, FX, OUT, VIEW, HISTORY, SOURCES }
 fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPickSample: (Int) -> Unit, onPermission: () -> Unit, onImportXml: () -> Unit = {}, onConnectDrive: () -> Unit = {}) {
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var libTarget by remember { mutableIntStateOf(-1) }
+
+    BackHandler(enabled = c.sampleEdit != null || c.pendingRemove != null || c.rbReport != null ||
+        c.pendingLoad != null || c.aligning || sheet != Sheet.NONE) {
+        when {
+            c.sampleEdit != null -> c.sampleEdit = null
+            c.pendingRemove != null -> c.cancelRemove()
+            c.rbReport != null -> c.rbReport = null
+            c.pendingLoad != null -> c.cancelLoad()
+            c.aligning -> c.cancelAlign()
+            else -> sheet = Sheet.NONE
+        }
+    }
 
     LaunchedEffect(Unit) {
         var last = 0L
@@ -191,7 +204,7 @@ private fun TopBar(c: Controller, onLibrary: () -> Unit, onFx: () -> Unit, onOut
             }
         }
         Spacer(Modifier.weight(1f))
-        TopChip(if (c.recording) "● REC ${fmt(c.recSeconds)}" else "● REC", c.recording, C.bad, onClick = { c.toggleRecord() })
+        TopChip(if (c.recording) "● REC ${fmt(c.recSeconds)}" else if (c.recSaving) "● SAVING" else "● REC", c.recording || c.recSaving, C.bad, onClick = { c.toggleRecord() })
         TopChip("FX  ${if (c.fxOn) c.fxType.label else "off"}", c.fxOn, C.fx, onClick = onFx)
         TopChip("OUT", false, C.tx, sub = c.outputLabel, onClick = onOut)
         TopChip("VIEW", false, C.tx, onClick = onView)
