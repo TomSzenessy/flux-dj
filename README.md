@@ -31,9 +31,9 @@ third-party dependencies (no audio, HTTP, JSON or image libraries).
   overrides local analysis — except for BPM/grid/cues you edited by hand.
   Audiobook/spoken-word Plex libraries are excluded; "My collection" limits Plex
   to matches in your `collection.xml`.
-- **Fast loading:** streaming decode (playable after about one second) and an
-  LRU disk cache of decoded audio. Reload timing is not benchmarked; expect a
-  fraction of a second once the PCM cache is warm.
+- **Fast loading:** streaming decode (playable after about one second), frames packed per
+  codec buffer so a local four-minute file decodes in a couple of seconds, an LRU disk
+  cache of decoded audio, and resumable downloads when the server drops the body.
 - **Audio routing:** single output, two devices (e.g. aux + Bluetooth) or split
   cable (L = cue, R = master), with latency alignment; master recording to WAV
   (`Music/FLUX` on API 29+; app-specific music folder below). With no CUE lit

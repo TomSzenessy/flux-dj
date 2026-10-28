@@ -51,7 +51,14 @@ internal fun Controller.loadUri(deckIdx: Int, uri: Uri) {
 }
 
 internal fun Controller.load(deckIdx: Int, item: LibItem, force: Boolean = false) {
-    if (!force && engine.decks[deckIdx].playing) { pendingLoad = deckIdx to item; return }
+    val d = engine.decks[deckIdx]
+    // Tapping the track that is already on a running deck must not restart it. Reloading the
+    // same row used to throw away the position, cues and play state of the track being mixed.
+    if (!force && d.playing && d.track?.id == item.id) {
+        toast = "“${item.title}” is already playing on deck ${deckName(deckIdx)}"
+        return
+    }
+    if (!force && d.playing) { pendingLoad = deckIdx to item; return }
     viewModelScope.launch(Dispatchers.Default) { loadItem(deckIdx, item) }
 }
 
@@ -342,7 +349,13 @@ private fun Controller.prefetchOriginal(item: LibItem) {
     viewModelScope.launch(Dispatchers.IO) { downloadOriginal(item) }
 }
 
-/** Download the compressed original; returns true when a valid local copy exists. */
+/**
+ * Download the compressed original; returns true when a valid local copy exists.
+ *
+ * Plex (and a flaky link) can close the body early — the old code threw the partial file away and
+ * the stream fallback then decoded only the truncated head of the song. Keep the partial file and
+ * resume it with a Range request until the advertised length is reached.
+ */
 internal suspend fun Controller.downloadOriginal(item: LibItem): Boolean {
     if (remoteCacheMb <= 0) return false
     if (originalValid(item)) return true
@@ -352,33 +365,56 @@ internal suspend fun Controller.downloadOriginal(item: LibItem): Boolean {
     val f = remoteFile(item.id)
     val ok = remoteOk(f)
     val tmp = java.io.File(remoteDir, f.name + ".tmp")
+    var url = u.toString()
     return try {
-        Http.requireSafe(u.toString())
-        val c = java.net.URL(u.toString()).openConnection() as java.net.HttpURLConnection
-        c.connectTimeout = 15_000; c.readTimeout = 30_000
-        c.instanceFollowRedirects = false
-        c.setRequestProperty("Accept-Encoding", "identity")
-        item.streamHeaders.forEach { (k, v) -> c.setRequestProperty(k, v) }
-        if (c.responseCode !in 200..299) { c.disconnect(); return false }
-        val expected = c.contentLengthLong
-        if (expected > remoteCap) { c.disconnect(); return false }
-        var written = 0L
-        c.inputStream.use { inp -> tmp.outputStream().use { out ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-                val n = inp.read(buf)
-                if (n < 0) break
-                written += n
-                if (written > remoteCap) throw java.io.IOException("download exceeds the cache size")
-                out.write(buf, 0, n)
+        Http.requireSafe(url)
+        if (tmp.exists() && tmp.length() > remoteCap) tmp.delete()
+        var expected = -1L
+        for (attempt in 0 until 5) {
+            val have = if (tmp.exists()) tmp.length() else 0L
+            val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 15_000; c.readTimeout = 30_000
+            c.instanceFollowRedirects = false
+            c.setRequestProperty("Accept-Encoding", "identity")
+            if (have > 0) c.setRequestProperty("Range", "bytes=$have-")
+            item.streamHeaders.forEach { (k, v) -> c.setRequestProperty(k, v) }
+            val code = c.responseCode
+            if (code in 300..399) {
+                url = Http.resolveRedirect(url, c.getHeaderField("Location"))
+                c.disconnect()
+                continue
             }
-        } }
-        c.disconnect()
-        if (expected > 0 && tmp.length() != expected) {
-            android.util.Log.w("FLUX-CACHE", "partial download ${item.title}: ${tmp.length()} / $expected")
-            tmp.delete(); return false
+            if (code == 416) { c.disconnect(); break }   // nothing left to ask for
+            if (code !in 200..299) { c.disconnect(); return false }
+            val append = code == 206 && have > 0
+            val total = if (code == 206) {
+                c.getHeaderField("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull() ?: -1L
+            } else c.contentLengthLong
+            if (total > remoteCap) { c.disconnect(); return false }
+            expected = total
+            if (!append) { tmp.delete(); }
+            var written = if (append) have else 0L
+            c.inputStream.use { inp -> java.io.FileOutputStream(tmp, append).use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = inp.read(buf)
+                    if (n < 0) break
+                    written += n
+                    if (written > remoteCap) throw java.io.IOException("download exceeds the cache size")
+                    out.write(buf, 0, n)
+                }
+            } }
+            c.disconnect()
+            if (expected > 0 && written >= expected) break
+            if (expected > 0) android.util.Log.w("FLUX-CACHE", "short download ${item.title}: $written / $expected — resuming")
+            else if (written <= 4096) break
         }
-        if (tmp.length() <= 4096) { tmp.delete(); return false }
+        val got = if (tmp.exists()) tmp.length() else 0L
+        if (expected > 0 && got < expected) {
+            android.util.Log.w("FLUX-CACHE", "incomplete download ${item.title}: $got / $expected")
+            return false   // keep the partial file; the next attempt resumes it
+        }
+        if (got <= 4096) { tmp.delete(); return false }
         if (f.exists()) f.delete()
         if (!tmp.renameTo(f)) { tmp.delete(); return false }
         ok.writeText(f.length().toString())
@@ -387,7 +423,7 @@ internal suspend fun Controller.downloadOriginal(item: LibItem): Boolean {
         true
     } catch (e: Exception) {
         android.util.Log.w("FLUX-CACHE", "prefetch failed ${item.title}: ${e.message}")
-        tmp.delete(); false
+        false   // keep the partial file so the next attempt resumes instead of restarting
     }
 }
 

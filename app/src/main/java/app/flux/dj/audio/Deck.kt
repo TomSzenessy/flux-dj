@@ -63,6 +63,10 @@ class Deck(val index: Int) {
     // granular engine
     private val G = 2048
     private val H = G / 2
+    /** Samples compared when aligning a new grain with the running one (WSOLA). */
+    private val CORR = 128
+    /** How far (frames) the aligned grain start may wander from the nominal position. */
+    private val SEARCH = 384
     private val win = FloatArray(G) { (0.5 - 0.5 * cos(2 * PI * (it + 0.5) / G)).toFloat() }
     private val gStart = DoubleArray(2)
     private val gIdx = intArrayOf(-1, -1)
@@ -216,8 +220,32 @@ class Deck(val index: Int) {
         // land exactly on the grid point so the loop is tight (a few ms of correction at most)
         if (loopOn && playing && abs(s - pos) < spbHere() * 0.75) seekReq = s
     }
-    fun loopToggle(at: Double = pos) { if (loopOn) loopOn = false else loopSet(loopBeats, at) }
+    /**
+     * LOOP on/off. Switching it back on re-enters the loop that is already stored (CDJ reloop)
+     * instead of re-anchoring it at the playhead, so an accidental off/on does not move the grid.
+     */
+    fun loopToggle(at: Double = pos) {
+        if (loopOn) loopOn = false
+        else if (loopOut - loopIn > 1.0 && loopIn < endFrame()) loopOn = true
+        else loopSet(loopBeats, at)
+    }
     fun loopOff() { loopOn = false }
+
+    /**
+     * Slide an active loop by [frames] and return where the playhead should now be (the caller
+     * adds the output delay before seeking). The audible point inside the loop is preserved.
+     */
+    fun loopMove(frames: Double, at: Double = pos): Double {
+        if (!loopOn) return at
+        val len = loopOut - loopIn
+        if (len <= 1.0) return at
+        val end = endFrame()
+        val oldIn = loopIn
+        val target = (loopIn + frames).coerceIn(0.0, maxOf(0.0, end - len))
+        loopIn = target
+        loopOut = target + len
+        return loopIn + (at - oldIn)
+    }
     fun loopScale(f: Float) {
         val nb = (loopBeats * f).coerceIn(0.125f, 64f)
         loopBeats = nb
@@ -304,7 +332,17 @@ class Deck(val index: Int) {
                     if (hop >= H) {
                         hop = 0
                         val s = nextSlot; nextSlot = 1 - nextSlot
-                        gStart[s] = posD + r * H - H * pitchF
+                        val prev = 1 - s
+                        var start = posD + r * H - H * pitchF
+                        // WSOLA alignment. The two grains in the crossfade used to be a fixed
+                        // H*(r-1) frames apart, so they summed out of phase: turning PITCH LOCK
+                        // on made the track sound detuned (measured 424/466 Hz for a 440 Hz tone).
+                        // Nudge the new grain onto the waveform the running one is about to play.
+                        val gi = gIdx[prev]
+                        if (gi >= 0 && pitchF > 0.25) {
+                            start = alignGrain(pcm, gStart[prev] + gi * pitchF, start, lastIdx, pitchF)
+                        }
+                        gStart[s] = start
                         gIdx[s] = 0
                     }
                     hop++
@@ -352,6 +390,49 @@ class Deck(val index: Int) {
         rate = r
         pos = posD
         level = lvl * (1f / 32768f)
+    }
+
+    /**
+     * Pick the grain start near [ideal] whose waveform best continues the tail the running grain
+     * is playing at [prevRead]. Without this the crossfade mixes two out-of-phase copies and
+     * PITCH LOCK sounds detuned. Correlation is decimated — it only has to find the period — so
+     * the search costs about 16k multiply-adds per 1024 output frames on the mixer thread.
+     */
+    private fun alignGrain(pcm: ShortArray, prevRead: Double, ideal: Double, lastIdx: Int, rate: Double): Double {
+        val span = ((CORR + 8) * max(1.0, rate)).toInt() + 2
+        val minStart = 2
+        val maxStart = lastIdx - span
+        val p = prevRead.toInt()
+        if (p < minStart || p > maxStart) return ideal
+        val nominal = (ideal - prevRead).toInt()
+        var lo = maxOf(nominal - SEARCH, minStart - p)
+        var hi = minOf(nominal + SEARCH, maxStart - p)
+        if (hi < lo) return ideal
+        fun score(d: Int): Double {
+            var acc = 0.0
+            var k = 0
+            while (k < CORR) {
+                val s = (k * rate).toInt()
+                acc += pcm[(p + d + s) * 2].toDouble() * pcm[(p + s) * 2]
+                k += 2
+            }
+            return acc
+        }
+        var best = -1.0
+        var bestD = nominal.coerceIn(lo, hi)
+        var d = lo
+        while (d <= hi) {
+            val v = score(d)
+            if (v > best) { best = v; bestD = d }
+            d += 4
+        }
+        for (d2 in (bestD - 3)..(bestD + 3)) {
+            if (d2 in lo..hi) {
+                val v = score(d2)
+                if (v > best) { best = v; bestD = d2 }
+            }
+        }
+        return prevRead + bestD
     }
 
     private fun hermite(xm1: Float, x0: Float, x1: Float, x2: Float, t: Float): Float {

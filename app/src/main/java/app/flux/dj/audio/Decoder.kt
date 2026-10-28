@@ -79,32 +79,51 @@ object Decoder {
                 return true
             }
             var lastProgress = System.nanoTime()
+            var eosQueued = false
+            var lastProgressCb = 0L
             while (!outDone) {
                 if (System.nanoTime() - lastProgress > STALL_NS) {
                     android.util.Log.w("FLUX", "decode stalled for $uri")
                     return null
                 }
                 var progressed = false
-                // feed every free input buffer without waiting
-                while (!inDone) {
-                    val ii = codec.dequeueInputBuffer(0)
+                // Feed every free input buffer, packing as many source frames into it as fit.
+                // One codec wake-up per MP3 frame capped the whole decode at ~10x real time
+                // (a four-minute track took 20 s even though it was already on disk).
+                while (!eosQueued) {
+                    val ii = codec.dequeueInputBuffer(if (progressed) 0 else 10_000)
                     if (ii < 0) break
                     progressed = true
                     val buf = codec.getInputBuffer(ii)!!
-                    val n = ex.readSampleData(buf, 0)
-                    if (n < 0) {
-                        codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                        inDone = true
+                    buf.clear()
+                    var off = 0
+                    var stamp = -1L
+                    if (!inDone) {
+                        while (buf.capacity() - off >= 2048) {
+                            val n = ex.readSampleData(buf, off)
+                            if (n < 0) { inDone = true; break }
+                            if (stamp < 0) stamp = ex.sampleTime
+                            off += n
+                            if (!ex.advance()) { inDone = true; break }
+                        }
+                    }
+                    if (off > 0) {
+                        codec.queueInputBuffer(ii, 0, off, stamp.coerceAtLeast(0L), 0)
+                        val now = System.nanoTime()
+                        if (durUs > 0 && stamp >= 0 && now - lastProgressCb > 200_000_000L) {
+                            lastProgressCb = now
+                            onProgress((stamp.toFloat() / durUs).coerceIn(0f, 1f))
+                        }
+                        lastProgress = now
                     } else {
-                        codec.queueInputBuffer(ii, 0, n, ex.sampleTime, 0)
-                        if (durUs > 0) onProgress((ex.sampleTime.toFloat() / durUs).coerceIn(0f, 1f))
-                        ex.advance()
-                        lastProgress = System.nanoTime()
+                        codec.queueInputBuffer(ii, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        eosQueued = true
                     }
                 }
-                // drain every ready output buffer; only block briefly when nothing moved
+                // Drain every ready output buffer; block only when nothing moved so the codec
+                // gets a chance to deliver a whole batch at once.
                 while (!outDone) {
-                    val oi = codec.dequeueOutputBuffer(info, if (progressed) 0 else 2000)
+                    val oi = codec.dequeueOutputBuffer(info, if (progressed) 0 else 10_000)
                     if (oi == MediaCodec.INFO_TRY_AGAIN_LATER) break
                     progressed = true
                     if (oi == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {

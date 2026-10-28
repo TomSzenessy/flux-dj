@@ -382,6 +382,15 @@ class Controller(app: Application) : AndroidViewModel(app) {
     fun beatJumpPad(i: Int, beats: Float) {
         val d = deck(i)
         val from = touchPos(i)
+        // A beat jump with a loop running slides the loop window (like the CDJ pads) instead of
+        // jumping the playhead out of it, which could only ever wrap back to the same spot.
+        if (d.loopOn) {
+            val delta = d.beatsFrom(from, beats.toDouble()) - from
+            val at = d.loopMove(delta, from)
+            android.util.Log.i("FLUX-JUMP", "loop move beats=$beats delta=${delta.toLong()} in=${d.loopIn.toLong()} out=${d.loopOut.toLong()}")
+            jumpAudible(i, at)
+            return
+        }
         val target = d.beatsFrom(from, beats.toDouble())
         android.util.Log.i("FLUX-JUMP", "beats=$beats from=${from.toLong()} target=${target.toLong()} delta=${(target-from).toLong()} pos=${d.pos.toLong()}")
         jumpAudible(i, target)
