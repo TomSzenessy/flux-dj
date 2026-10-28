@@ -169,14 +169,21 @@ class Deck(val index: Int) {
         if (previewing) { previewing = false; playing = false; seekReq = previewReturn }
     }
 
+    /**
+     * A hot cue latches: tapping a stored cue jumps there and starts the deck, and it keeps playing
+     * after the finger lifts (unlike the momentary CDJ CUE button). Tapping it again while the deck
+     * runs restarts from the cue.
+     */
     fun hotCueDown(i: Int, at: Double = pos) {
         if (track == null) return
         val c = hotCues[i]
         if (c < 0) { hotCues[i] = if (quantize) snapBeat(at) else at; hotCueRev++; return }
+        previewing = false
         seekReq = wrapToLoop(c)
-        if (!playing) { previewing = true; previewReturn = c; playing = true }
+        if (!playing) play()
     }
-    fun hotCueUp(i: Int) { if (previewing) { previewing = false; playing = false; seekReq = previewReturn } }
+    /** Hot cues latch, so releasing the pad does not stop the deck. */
+    fun hotCueUp(i: Int) {}
     fun hotCueClear(i: Int) { hotCues[i] = -1.0; hotCueRev++ }
 
     fun beatJump(beats: Float, from: Double = pos) { seek(beatsFrom(from, beats.toDouble())) }

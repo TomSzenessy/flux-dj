@@ -185,16 +185,23 @@ class Engine(private val ctx: Context) {
         decks[1].playing && !decks[0].playing -> 1
         else -> if (xfader <= 0.5f) 0 else 1
     }
-    fun masterBpm(): Float = decks[leader()].currentBpm
+    fun masterBpm(): Float = decks[leader()].let { (nominalBpm(it) * deckRatio(it)).toFloat() }
 
     fun toggleSync(i: Int) {
         val d = decks[i]; val o = decks[1 - i]
-        if (d.syncOn) { d.tempo = ((d.effRatio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f); d.syncOn = false; d.syncRefBpm = 0f; d.syncRefMaster = -1f; return }
-        if (d.bpm <= 0f || o.bpm <= 0f) return
-        if (o.syncOn) { o.tempo = ((o.effRatio - 1.0) / o.range).toFloat().coerceIn(-1f, 1f); o.syncOn = false; o.syncRefBpm = 0f; o.syncRefMaster = -1f }
-        d.syncRatio = syncTargetNow(d, o)
-        d.syncRefMaster = o.effRatio.toFloat()
-        d.syncRefBpm = (currentBpm(o) * o.effRatio).toFloat()
+        if (d.syncOn) { releaseSync(d); return }
+        engageSync(d, o)
+    }
+
+    /** Match [d] to [master] once, then follow the master's pitch fader. */
+    private fun engageSync(d: Deck, master: Deck) {
+        if (nominalBpm(d) <= 0.0 || nominalBpm(master) <= 0.0) return
+        if (master.syncOn) releaseSync(master)   // the deck we follow becomes the master
+        d.syncRatio = syncTargetNow(d, master)
+        ensurePitchRange(d, d.syncRatio)
+        val masterSpeed = deckRatio(master).toFloat()
+        d.syncRefMaster = masterSpeed
+        d.syncRefBpm = (nominalBpm(master) * masterSpeed).toFloat()
         d.syncOn = true
         d.needAlign = true
     }
@@ -205,17 +212,6 @@ class Engine(private val ctx: Context) {
         if (t.bpm <= 0) return 0.0
         return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
     }
-
-    /** One-time match: current master tempo ÷ current follower tempo, folded into 0.67–1.5. */
-    private fun syncTargetNow(f: Deck, l: Deck): Double {
-        val local = currentBpm(f)
-        if (local <= 0.0) return 1.0
-        var r = (currentBpm(l) * l.effRatio) / local
-        while (r > 1.5) r /= 2; while (r < 0.67) r *= 2
-        return r
-    }
-
-    fun setSyncOffTempoKeep(d: Deck) { d.tempo = ((d.effRatio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f) }
 
     fun startTransition(beats: Float) { transCancel = false; transReq = beats }
     fun cancelTransition() { transCancel = true }
@@ -480,10 +476,11 @@ class Engine(private val ctx: Context) {
                 xfader = tXf0
                 val d = decks[to]
                 chans[to].lo = 0f
+                if (decks[src].syncOn) releaseSync(decks[src])   // one master at a time
                 if (!d.playing) {
-                    if (d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTargetNow(d, decks[src]); d.syncRefMaster = decks[src].effRatio.toFloat(); d.syncRefBpm = (currentBpm(decks[src]) * decks[src].effRatio).toFloat(); d.syncOn = true; d.needAlign = true }
+                    engageSync(d, decks[src])
                     d.play()
-                } else if (!d.syncOn && d.bpm > 0 && decks[src].bpm > 0) { d.syncRatio = syncTargetNow(d, decks[src]); d.syncRefMaster = decks[src].effRatio.toFloat(); d.syncRefBpm = (currentBpm(decks[src]) * decks[src].effRatio).toFloat(); d.syncOn = true; d.needAlign = true }
+                } else if (!d.syncOn) engageSync(d, decks[src])
                 transitionActive = true
             }
         }
@@ -499,8 +496,8 @@ class Engine(private val ctx: Context) {
                 chans[tTo].lo = 0.5f * sw
                 chans[tFrom].hi = 0.5f - 0.2f * p
                 if (p >= 1f) {
-                    decks[tFrom].pause(); decks[tTo].syncOn = false; decks[tTo].syncRefBpm = 0f; decks[tTo].syncRefMaster = -1f
-                    decks[tTo].tempo = ((decks[tTo].effRatio - 1.0) / decks[tTo].range).toFloat().coerceIn(-1f, 1f)
+                    decks[tFrom].pause()
+                    releaseSync(decks[tTo])
                     chans[tFrom].lo = 0.5f; chans[tFrom].hi = 0.5f
                     transitionActive = false; transitionProgress = 0f
                 }
@@ -508,16 +505,19 @@ class Engine(private val ctx: Context) {
         }
 
         // ---- sync: tempo + phase
+        // Exactly one deck follows. If both ended up synced (e.g. a cancelled transition), the leader
+        // keeps its speed and becomes the master instead of the two re-pitching each other forever.
+        if (decks[0].syncOn && decks[1].syncOn) releaseSync(decks[leader()])
         for (i in 0..1) {
             val d = decks[i]; val l = decks[1 - i]
-            if (d.syncOn && d.bpm > 0 && l.bpm > 0) {
+            if (d.syncOn && nominalBpm(d) > 0.0 && nominalBpm(l) > 0.0) {
                 // Match once. After that, only follow the master's pitch fader; tempo markers,
                 // loops and jumps must never re-pitch the synced deck.
-                val masterSpeed = l.effRatio.toFloat()
+                val masterSpeed = deckRatio(l).toFloat()
                 if (d.syncRefMaster < 0f) {
                     d.syncRatio = syncTargetNow(d, l)
                     d.syncRefMaster = masterSpeed
-                    d.syncRefBpm = (currentBpm(l) * l.effRatio).toFloat()
+                    d.syncRefBpm = (nominalBpm(l) * masterSpeed).toFloat()
                 } else if (abs(masterSpeed - d.syncRefMaster) > 0.0005f) {
                     d.syncRatio = (d.syncRatio * (masterSpeed / d.syncRefMaster)).coerceIn(0.5, 2.0)
                     d.syncRefMaster = masterSpeed
@@ -783,4 +783,55 @@ class Recorder(private val ctx: Context) {
         b.put("data".toByteArray()); b.putInt(dataLen.toInt())
         return b.array()
     }
+}
+
+// ---------------------------------------------------------------------------- sync maths (pure, unit-tested)
+
+/**
+ * The tempo a deck shows and syncs against: the track's dominant BPM, never the tempo of the grid
+ * segment under the playhead. Rekordbox dynamic grids change tempo every few beats; matching those
+ * would make the two decks disagree and re-pitch on every SYNC press.
+ */
+internal fun nominalBpm(d: Deck): Double = d.track?.bpm?.toDouble() ?: 0.0
+
+/** Ratio that makes [followerBpm] play at [masterBpm] × [masterRatio], folded into 0.67–1.5. */
+internal fun syncMatchRatio(followerBpm: Double, masterBpm: Double, masterRatio: Double): Double {
+    if (followerBpm <= 0.0 || masterBpm <= 0.0) return 1.0
+    var r = (masterBpm * masterRatio) / followerBpm
+    while (r > 1.5) r /= 2
+    while (r < 0.67) r *= 2
+    return r
+}
+
+/**
+ * The ratio a deck will play at. Unlike [Deck.effRatio] (written by the audio thread once per block),
+ * this is the value the UI just set, so sync never reads a stale speed — e.g. right after the master
+ * was released and its tempo was frozen into the fader.
+ */
+internal fun deckRatio(d: Deck): Double = if (d.syncOn) d.syncRatio else 1.0 + d.tempo * d.range
+
+/** One-time match: dominant master tempo ÷ dominant follower tempo. */
+internal fun syncTargetNow(f: Deck, l: Deck): Double =
+    syncMatchRatio(nominalBpm(f), nominalBpm(l), deckRatio(l))
+
+/** Widen the pitch range if the synced ratio does not fit, so SYNC off cannot snap the tempo. */
+internal fun ensurePitchRange(d: Deck, ratio: Double) {
+    val need = abs(ratio - 1.0)
+    if (need <= d.range) return
+    floatArrayOf(0.06f, 0.10f, 0.16f, 0.50f).firstOrNull { it >= need }?.let { d.range = it }
+}
+
+/**
+ * Turn sync off without changing the speed: freeze the matched ratio into the pitch fader so the
+ * track keeps playing at exactly the tempo it had while synced.
+ */
+internal fun releaseSync(d: Deck) {
+    if (!d.syncOn) return
+    val ratio = d.syncRatio
+    ensurePitchRange(d, ratio)
+    d.tempo = ((ratio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f)
+    d.syncOn = false
+    d.syncRefBpm = 0f
+    d.syncRefMaster = -1f
+    d.phaseAdj = 1.0
 }

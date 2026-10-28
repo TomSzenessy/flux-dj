@@ -131,6 +131,25 @@ class TransportTest {
         assertEquals("nearest beat ahead", grid + spb, d.loopIn, 40.0)
     }
 
+    @Test fun hotCueJumpsAndStartsLatching() {
+        val t = DemoTracks.build(DemoTracks.specs[0])
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.render(BLOCK, l, r); d.play(); repeat(200) { d.render(BLOCK, l, r) }
+        d.hotCueDown(0)                       // store a cue at the playhead
+        assertTrue("cue stored", d.hotCues[0] >= 0)
+        d.pause(); d.render(BLOCK, l, r)
+        d.hotCueDown(0)                       // tap the stored cue on a stopped deck
+        assertTrue("hot cue starts the deck", d.playing)
+        assertFalse("hot cue latches instead of previewing", d.previewing)
+        d.render(BLOCK, l, r)
+        assertEquals("jumped to the cue", d.hotCues[0], d.pos, 2000.0)
+        d.hotCueUp(0)                         // release the pad
+        assertTrue("keeps playing after release", d.playing)
+        repeat(100) { d.render(BLOCK, l, r) }
+        assertTrue("audio flows on from the cue", d.pos > d.hotCues[0])
+    }
+
     @Test fun jumpStaysInsideLoop() {
         val t = DemoTracks.build(DemoTracks.specs[0])
         val d = Deck(0); d.load(t)
@@ -141,5 +160,52 @@ class TransportTest {
         assertTrue("loop stays on", d.loopOn)
         assertTrue("inside loop", d.pos >= d.loopIn && d.pos < d.loopOut)
         assertTrue("wrapped by loop length", d.pos - d.loopIn < len)
+    }
+}
+
+class SyncTest {
+    private fun track(id: String, dominant: Float): Track {
+        val t = Track(id, id, "", ShortArray(SR * 8 * 2))
+        t.bpm = dominant
+        return t
+    }
+
+    /**
+     * A rekordbox dynamic grid says ~138.9 BPM under the playhead while the deck displays 128.01.
+     * Sync must match what both decks show, and must not depend on where the playheads are — the old
+     * code used the grid segment, so every SYNC press re-pitched the deck.
+     */
+    @Test fun syncMatchesTheDisplayedTempoNotTheGridSegment() {
+        val masterTrack = track("m", 128.01f)
+        masterTrack.setTempoMap(doubleArrayOf(0.0, 1.296, 3.28), doubleArrayOf(138.89, 120.97, 138.89), 1)
+        masterTrack.bpm = 128.01f                       // what the deck shows (dominant tempo)
+
+        val follower = Deck(0).apply { load(track("f", 128f)) }
+        val master = Deck(1).apply { load(masterTrack); tempo = 0.6f; range = 0.08f; effRatio = 1.048 }
+
+        assertEquals("grid segment under the playhead", 138.89f, masterTrack.bpmAt(0.0), 1f)
+        val r = syncTargetNow(follower, master)
+        assertEquals("matches the displayed BPM", 1.0481, r, 0.0005)
+
+        // moving either playhead must not change the match
+        follower.pos = 20.0 * SR
+        master.pos = 40.0 * SR
+        assertEquals("same match anywhere in the track", r, syncTargetNow(follower, master), 1e-9)
+    }
+
+    @Test fun syncOffKeepsTheMatchedSpeed() {
+        val d = Deck(0).apply { load(track("f", 128f)); range = 0.08f }
+        d.syncOn = true
+        d.syncRatio = 1.137
+        releaseSync(d)
+        assertFalse("sync released", d.syncOn)
+        assertEquals("fader carries the matched speed", 1.137, 1.0 + d.tempo * d.range, 1e-6)
+        assertTrue("range widened so the fader can hold it", d.range >= 0.137f)
+    }
+
+    @Test fun halfDoubleTempoIsFolded() {
+        assertEquals("half-time master", 1.0, syncMatchRatio(87.0, 174.0, 1.0), 1e-9)
+        assertEquals("regular match", 1.28, syncMatchRatio(100.0, 128.0, 1.0), 1e-6)
+        assertEquals("unknown bpm is neutral", 1.0, syncMatchRatio(0.0, 128.0, 1.0), 1e-9)
     }
 }
