@@ -35,3 +35,6 @@ Unit tests (audio engine, BPM/key/grid analysis):
 ```
 
 GitHub Actions builds debug + release APKs on every push (`.github/workflows/android.yml`). Download the `flux-apk` artifact from the run, or push a `v*` tag to attach both APKs to a GitHub Release for one-tap installs on other devices.
+
+<!-- repoctl:project-readme -->
+> Project initialized: **flux-dj** (`android`). Agents start with [`AGENTS.md`](./AGENTS.md): `make start`, `make next`, `make done`.

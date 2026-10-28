@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Minor and patch bumps share one pull request; major bumps are not
+      # grouped, so each arrives separately and is reviewed on its own.
+      github-actions-minor-patch:
+        update-types:
+          - minor
+          - patch

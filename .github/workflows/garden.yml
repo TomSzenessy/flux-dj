@@ -1,0 +1,33 @@
+name: garden
+
+# Weekly, report-only rot sweep: stale/dead doc bindings, expired deprecations,
+# orphan task markers, budgets, adapter drift, and each surface's garden
+# commands. It never writes to the repository; a gardener agent or maintainer
+# fixes findings in ordinary issue-backed changes (docs/self-healing.md).
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: garden-${{ github.ref }}
+  # Scheduled and manual runs never cancel each other.
+  cancel-in-progress: false
+
+jobs:
+  garden:
+    name: rot report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - name: Check out full history for staleness detection
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run the gardener
+        run: python3 tools/repoctl.py garden --output "$GITHUB_STEP_SUMMARY"

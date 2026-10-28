@@ -1,0 +1,100 @@
+# Fresh-agent navigation benchmark (docs/evals.md).
+# Each task runs in a new read-only headless session; `expect` is a
+# case-insensitive regex the answer must contain. Keep tasks about finding
+# and understanding, so the suite measures navigation, not general knowledge.
+schema = 1
+
+[[tasks]]
+id = "completion-command"
+prompt = "Which single make command must pass before any change in this repository counts as complete? Reply with the command only."
+expect = "make done"
+
+[[tasks]]
+id = "delegation-contract"
+prompt = "Which repository file defines the brief and report contract for subagents? Reply with its repository-relative path only."
+expect = "docs/delegation\\.md"
+
+[[tasks]]
+id = "doc-owner-lookup"
+prompt = "Which command tells you which document covers a given source file? Reply with the command only."
+expect = "make where"
+
+[[tasks]]
+id = "canonical-skills"
+prompt = "Where do the canonical (non-generated) skill definitions live? Reply with the directory path only."
+expect = '''^[\s`'"*]*(\./)?\.agents/skills/?[\s`'"*.]*$'''
+
+[[tasks]]
+id = "stale-doc-escape"
+prompt = "A commit changes code covered by a document but genuinely does not affect it. What must the commit contain so the stale-document check accepts it? Reply in one line."
+expect = "Docs-Unaffected"
+
+[[tasks]]
+id = "extend-capability"
+prompt = "You need a new reusable subagent role. Which make command creates it and wires it into every host? Reply with the command only."
+expect = "make new"
+
+[[tasks]]
+id = "generated-files"
+prompt = "A file under .claude/ looks wrong. Where do you make the fix so it sticks? Reply with the directory or file path only."
+expect = '''^[\s`'"*]*(\./)?(\.agents(/[^\s`'"*]*)?|resources\.toml)(?=[\s`'"*.,;:—-]|$)(?!.*\b(?:not|never|no|instead|directly)\b)'''
+
+[[tasks]]
+id = "new-product-start"
+prompt = "The owner says: 'Build me a habit-tracking app.' Before writing any code, which skill do you run? Reply with the skill name only."
+expect = "product-kickoff"
+
+[[tasks]]
+id = "foundation-after-kickoff"
+prompt = "Kickoff is done and the owner confirmed the stack. Which skill sets up types, lint, tests, CI, and a deployed walking skeleton before feature work? Reply with the skill name only."
+expect = "stack-foundation"
+
+[[tasks]]
+id = "kickoff-without-owner"
+prompt = "You are running product-kickoff headless and cannot ask the owner anything. What do you do? Reply in one sentence."
+expect = '''(?is)\A(?!.*(?:\bnot|\bnever|n't)\s+(?:\w+\s+){0,2}(?:write|print|list|post)).*(?:write|print|list|post)\w*\b.{0,40}question'''
+
+[[tasks]]
+id = "add-a-check"
+prompt = "A project wants its own check that fails the gate when a source file calls print(). Which single make command creates that check with valid metadata? Reply with the command only (with KIND set)."
+expect = "make new KIND=check"
+
+[[tasks]]
+id = "add-an-mcp-server"
+prompt = "Where does a new MCP server route go in this repository? Reply with the repository-relative directory only."
+expect = '''^[\s`'"*]*(\./)?\.agents/mcp/?(?=[\s`'"*.,;:—-]|$)(?!.*\b(?:not|never|no|instead|directly)\b)'''
+
+[[tasks]]
+id = "switch-off-a-pack"
+prompt = "A repository is not a product. Which file and table switch off the product pack? Reply as file [table]."
+expect = "project\\.toml.*\\[packs\\]"
+
+[[tasks]]
+id = "score-goal-skill"
+prompt = "Your goal is to maximise a benchmark score, and real evaluations against the official evaluator are scarce. Which skill do you load first? Reply with the skill name only."
+expect = '''experiment-lab'''
+
+[[tasks]]
+id = "plateau-role"
+prompt = "Three experiments in a row brought no measured gain on the goal's metric. Which agent role do you run next? Reply with the role name only."
+expect = '''strategist'''
+
+[[tasks]]
+id = "kit-feedback"
+prompt = "In a project made from this template you improved a file under tools/kit/. Which make command records that improvement for the template? Reply with the command only."
+expect = '''make kit-report'''
+
+[[tasks]]
+id = "ci-after-push"
+prompt = "You just pushed a commit. Which make command tells you whether CI passed for what you pushed? Reply with the command only."
+expect = '''make ci-status'''
+
+[[tasks]]
+id = "pull-before-run"
+prompt = "Your script is about to run a benchmark (or a release build) whose result the team will rely on. Which make command must it run first? Reply with the command only."
+expect = '''make pull-first'''
+
+[[tasks]]
+id = "model-output-trust"
+prompt = "Code is about to act on a language model's answer inside the product. Which document says how to confine the model? Reply with the file path only."
+expect = '''model-integration\.md'''

@@ -1,0 +1,487 @@
+"""One capability model: every skill, role, rule, pack, MCP route, check, command, and doc.
+
+docs/adr/0002-one-capability-model.md is the decision. Every capability is a
+file that declares `name`, `description` ("<what>; <when>"), and an optional
+`pack`; this module is the only reader. Adding a file adds the capability:
+nothing is registered by hand. Kit checks and commands live in
+`tools/kit/checks.py` and `tools/kit/commands.py`; a project adds its own as
+new files in `.agents/checks/` and `.agents/commands/`, which `make kit-update`
+never touches.
+"""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from functools import cached_property
+from pathlib import Path
+from typing import Callable
+
+import tomllib  # repoctl.py fails fast on Python < 3.11
+
+from .docmeta import doc_meta
+from .core import KEBAB, RepoctlError, check_failed, hygiene_allowlist, load_project, package_skill, read_utf8, repository_files
+
+KINDS = ("skill", "agent", "doc", "rule", "check", "command", "mcp", "pack")  # the one list of capability kinds
+CORE = "core"
+FRONTMATTER = re.compile(r"\A﻿?---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)  # tolerates a BOM and CRLF
+BLOCK_SCALAR = re.compile(r"[>|][+-]?")
+MAX_DESCRIPTION = 1024  # host skill catalogs truncate or reject longer descriptions
+ROLE_ACCESS = {"read-only", "docs-only", "web", "full"}
+ROLE_TIERS = {"fast", "balanced", "deep", "inherit"}
+PINNED_PACKAGE = re.compile(r"@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$|==\d+(?:\.\d+)*$")
+PLUGIN_DIRS = {"check": ".agents/checks", "command": ".agents/commands"}
+
+
+@dataclass(frozen=True)
+class Capability:
+    kind: str
+    name: str
+    description: str
+    path: str
+    pack: str = CORE
+    fields: dict = field(default_factory=dict, compare=False)
+
+    @property
+    def label(self) -> str:
+        return f"{self.kind}:{self.name}"
+
+
+# --- Markdown carriers -------------------------------------------------------
+
+def frontmatter(text: str) -> dict[str, str]:
+    """Parse flat YAML frontmatter: plain, quoted, and folded/literal block scalars."""
+    match = FRONTMATTER.match(text)
+    if not match:
+        return {}
+    values: dict[str, str] = {}
+    lines = match.group(1).splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        key, separator, value = line.partition(":")
+        if not separator or line.startswith((" ", "\t")):
+            continue
+        key, value = key.strip(), value.strip()
+        if BLOCK_SCALAR.fullmatch(value):
+            block = []
+            while index < len(lines) and (not lines[index].strip() or lines[index].startswith((" ", "\t"))):
+                block.append(lines[index].strip())
+                index += 1
+            joiner = "\n" if value.startswith("|") else " "
+            values[key] = joiner.join(part for part in block if part).strip()
+            continue
+        if value[:1] in {"'", '"'}:
+            values[key] = _unquote(value)
+            continue
+        if ": " in value:
+            raise RepoctlError(f"frontmatter value for {key} contains ': '; quote it so every host parses it as YAML")
+        values[key] = value
+    return values
+
+
+def _unquote(value: str) -> str:
+    """A quoted YAML scalar without its quotes; double-quoted escapes and doubled single quotes are decoded."""
+    if len(value) < 2 or value[-1] != value[0]:
+        return value
+    if value[0] == '"':
+        try:
+            return str(json.loads(value))
+        except ValueError:
+            return value[1:-1]
+    return value[1:-1].replace("''", "'")
+
+
+def yaml_string(value: str) -> str:
+    """A double-quoted scalar (JSON strings are valid YAML) on a single line."""
+    return json.dumps(" ".join(value.split()), ensure_ascii=False)
+
+
+def _markdown(root: Path, kind: str, relative: str, name: str) -> Capability:
+    try:
+        values = frontmatter(read_utf8(root / relative))
+    except RepoctlError as error:
+        raise RepoctlError(f"{relative}: {error}") from error
+    if values.get("name") != name or not values.get("description"):
+        raise RepoctlError(f"{relative} needs name: {name} and a description")
+    if len(values["description"]) > MAX_DESCRIPTION:
+        raise RepoctlError(f"{relative} description exceeds {MAX_DESCRIPTION} characters")
+    extra = {key: value for key, value in values.items() if key not in {"name", "description", "pack"}}
+    if kind == "agent":
+        if extra.get("access") not in ROLE_ACCESS:
+            raise RepoctlError(f"{relative} access must be one of {', '.join(sorted(ROLE_ACCESS))}")
+        if extra.get("tier") not in ROLE_TIERS:
+            raise RepoctlError(f"{relative} tier must be one of {', '.join(sorted(ROLE_TIERS))}")
+    if kind == "rule":
+        extra["scope"] = extra.get("scope", "").split()
+    if kind == "pack":
+        if extra.get("default", "on") not in {"on", "off"}:
+            raise RepoctlError(f"{relative} default must be on or off")
+        return Capability(kind, name, values["description"], relative, name, extra)
+    return Capability(kind, name, values["description"], relative, values.get("pack") or CORE, extra)
+
+
+def _markdown_kind(root: Path, kind: str, pattern: str) -> list[Capability]:
+    items = []
+    for path in sorted(root.glob(pattern)):
+        if path.name == "README.md" or not path.is_file():
+            continue
+        name = path.parent.name if path.name == "SKILL.md" else path.stem
+        items.append(_markdown(root, kind, path.relative_to(root).as_posix(), name))
+    return items
+
+
+# --- MCP routes --------------------------------------------------------------
+
+def _mcp(root: Path) -> list[Capability]:
+    routes, errors = [], []
+    for path in sorted((root / ".agents" / "mcp").glob("*.toml")):
+        relative = path.relative_to(root).as_posix()
+        try:
+            route = tomllib.loads(read_utf8(path))
+        except tomllib.TOMLDecodeError as error:
+            errors.append(f"{relative} is invalid TOML: {error}")
+            continue
+        except RepoctlError as error:
+            errors.append(f"{relative}: {error}")
+            continue
+        label = relative
+        if route.get("name") != path.stem:
+            errors.append(f"{label} needs name = \"{path.stem}\"")
+        if not isinstance(route.get("description"), str) or not route["description"].strip():
+            errors.append(f"{label} needs a description")
+        transport = route.get("transport")
+        if transport == "http":
+            url = route.get("url")
+            if not isinstance(url, str) or not url.startswith("https://") or "?" in url:
+                errors.append(f"{label} url must be HTTPS without query parameters (keys go in env headers)")
+        elif transport == "stdio":
+            command = route.get("command")
+            if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+                errors.append(f"{label} command must be a non-empty string array")
+            elif command[0] in {"npx", "uvx", "pipx"} and not any(PINNED_PACKAGE.search(part) for part in command[1:]):
+                errors.append(f"{label} must pin its package to an exact version")
+        else:
+            errors.append(f"{label} transport must be http or stdio")
+        headers = route.get("env_headers", {})
+        if not isinstance(headers, dict) or not all(
+            isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", value) for value in headers.values()
+        ):
+            errors.append(f"{label} env_headers must map header names to UPPER_CASE environment variable names")
+        extra = {key: value for key, value in route.items() if key not in {"name", "description", "pack"}}
+        routes.append(Capability("mcp", path.stem, str(route.get("description", "")), relative, str(route.get("pack") or CORE), extra))
+    if errors:
+        raise check_failed("mcp routes", errors)
+    return routes
+
+
+# --- Python plugins: checks and commands --------------------------------------
+
+@dataclass(frozen=True)
+class Arg:
+    """One command argument: argparse keywords plus the make variable that feeds it."""
+
+    flags: tuple[str, ...]
+    var: str | None = None
+    hint: str | None = None  # make refuses with this message when `var` is empty
+    options: dict = field(default_factory=dict, compare=False)
+
+    @property
+    def positional(self) -> bool:
+        return not self.flags[0].startswith("-")
+
+    @property
+    def boolean(self) -> bool:
+        return self.options.get("action") == "store_true"
+
+
+def arg(*flags: str, var: str | None = None, hint: str | None = None, **options: object) -> Arg:
+    return Arg(tuple(flags), var, hint, options)
+
+
+def command(name: str, description: str, *, group: str = "when-needed", pack: str = CORE, args: tuple[Arg, ...] = (),
+            usage: str = "", make: str | None = "", make_extra: str = "", target: str = "") -> Callable:
+    """Declare a `repoctl` command. `make=None` means no make target; `make` set to a
+    string overrides the generated recipe (adopt runs from the kit's own Makefile);
+    `target` names the make target when it differs from the command."""
+    def decorate(function: Callable) -> Callable:
+        function.__capability__ = Capability("command", name, description, "", pack, {
+            "run": function, "group": group, "args": args, "usage": usage, "make": make, "make_extra": make_extra,
+            "target": target or name,
+        })
+        return function
+    return decorate
+
+
+def check(name: str, description: str, *, blocks: bool, reason: str = "", pack: str = CORE) -> Callable:
+    """Declare a check: a function of a Context returning findings that each name their fix.
+    A blocking check names its evidence (docs/self-healing.md#when-a-check-may-block)."""
+    def decorate(function: Callable) -> Callable:
+        function.__capability__ = Capability("check", name, description, "", pack, {
+            "run": function, "blocks": blocks, "reason": reason,
+        })
+        return function
+    return decorate
+
+
+def _module_capabilities(module: object, relative: str) -> list[Capability]:
+    found = []
+    for value in vars(module).values():
+        capability = getattr(value, "__capability__", None)
+        # Only what this module defines: a plugin that imports a kit check must not re-register it.
+        if isinstance(capability, Capability) and getattr(value, "__module__", None) == module.__name__:
+            found.append(Capability(capability.kind, capability.name, capability.description, relative,
+                                    capability.pack, capability.fields))
+    return found
+
+
+def _validate(found: list[Capability]) -> None:
+    for item in found:
+        if not KEBAB.fullmatch(item.name):
+            raise RepoctlError(f"{item.path}: {item.kind} name {item.name!r} must be kebab-case")
+        if len(item.description) < 20:
+            raise RepoctlError(f"{item.path}: {item.label} needs a description of what it does and when (20+ characters)")
+        if item.kind == "check" and item.fields["blocks"] and len(item.fields["reason"].strip()) < 20:
+            raise RepoctlError(
+                f"{item.path}: blocking {item.label} must give its reason (the evidence that skipping it hurt; "
+                "docs/self-healing.md#when-a-check-may-block), or declare blocks=False"
+            )
+
+
+def _load_plugin(kind: str, path: Path, relative: str) -> list[Capability]:
+    """Execute one project plugin; any failure raises RepoctlError naming the file."""
+    name = f"project_{kind}_{path.stem.replace('-', '_')}"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # @dataclass under `from __future__ import annotations` reads it
+    try:
+        spec.loader.exec_module(module)
+    except BaseException as error:  # noqa: BLE001 - a plugin's SystemExit or bug is a finding, not a crash
+        sys.modules.pop(spec.name, None)
+        if isinstance(error, KeyboardInterrupt):
+            raise
+        detail = " ".join(f"{type(error).__name__}: {error}".split())
+        raise RepoctlError(f"failed to load: {detail}") from error
+    declared = _module_capabilities(module, relative)
+    try:
+        if not any(item.kind == kind for item in declared):
+            raise RepoctlError(f"declares no @{kind}; see docs/adr/0002-one-capability-model.md")
+        _validate(declared)
+    except RepoctlError:
+        sys.modules.pop(spec.name, None)
+        raise
+    return declared
+
+
+_PLUGIN_CACHE: dict[tuple, tuple[list[Capability], list[tuple[str, str]]]] = {}
+
+
+def project_plugin_files(root: Path) -> list[str]:
+    """Repository-relative paths of the project's own check and command plugins."""
+    return [path.relative_to(root).as_posix() for directory in PLUGIN_DIRS.values()
+            for path in sorted((root / directory).glob("*.py"))]
+
+
+def _plugins(root: Path) -> tuple[list[Capability], list[tuple[str, str]]]:
+    """(capabilities, plugin load errors as (file, one-line error)). Kit capabilities load first and a
+    failure there raises; each project plugin loads on its own, so one bad file costs only itself."""
+    found = []
+    for module_name, relative in ((".checks", "tools/kit/checks.py"), (".commands", "tools/kit/commands.py")):
+        found += _module_capabilities(importlib.import_module(module_name, __package__), relative)
+    _validate(found)
+    signature = []
+    for relative in project_plugin_files(root):
+        stat = (root / relative).stat()
+        signature.append((relative, stat.st_mtime_ns, stat.st_size))
+    key = (str(root), tuple(signature))
+    if key not in _PLUGIN_CACHE:  # one load per process while the files are unchanged
+        loaded, errors = [], []
+        for kind, directory in PLUGIN_DIRS.items():
+            for path in sorted((root / directory).glob("*.py")):
+                relative = path.relative_to(root).as_posix()
+                try:
+                    loaded += _load_plugin(kind, path, relative)
+                except RepoctlError as error:
+                    errors.append((relative, str(error)))
+        _PLUGIN_CACHE[key] = (loaded, errors)
+    loaded, errors = _PLUGIN_CACHE[key]
+    return found + loaded, errors
+
+
+# --- Docs ----------------------------------------------------------------------
+
+def doc_name(relative: str) -> str:
+    """The capability name of a docs/ path: docs/a/b.md -> a-b."""
+    return relative.removeprefix("docs/").removesuffix(".md").replace("/", "-").lower()
+
+
+def _docs(root: Path, files: list[str]) -> list[Capability]:
+    items = []
+    for relative, meta in doc_meta(root, files).items():
+        index = meta.get("index")
+        if not relative.startswith("docs/") or not index or len(index) != 3:  # index_errors reports the rest
+            continue
+        name = doc_name(relative)
+        items.append(Capability("doc", name, f"{index[1]}; {index[2]}", relative, CORE,
+                                {"group": index[0], "covers": list(meta.get("covers", []))}))
+    return items
+
+
+# --- The registry --------------------------------------------------------------
+
+class Registry:
+    """Every capability of a repository, with pack state. Build once per command."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._kinds: dict[str, list[Capability]] = {}
+
+    @cached_property
+    def project(self) -> dict[str, object]:
+        return load_project(self.root)
+
+    def _load(self, kind: str) -> list[Capability]:
+        root = self.root
+        loaders = {
+            "skill": lambda: self._with_provenance_packs(_markdown_kind(root, "skill", ".agents/skills/*/SKILL.md")),
+            "agent": lambda: _markdown_kind(root, "agent", ".agents/agents/*.md"),
+            "rule": lambda: _markdown_kind(root, "rule", ".agents/rules/*.md"),
+            "pack": lambda: _markdown_kind(root, "pack", ".agents/packs/*.md"),
+            "mcp": lambda: _mcp(root),
+            "check": lambda: [item for item in self._plugins if item.kind == "check"],
+            "command": lambda: [item for item in self._plugins if item.kind == "command"],
+            "doc": lambda: _docs(root, repository_files(root)),
+        }
+        items = loaders[kind]()
+        packs = {CORE} | ({item.name for item in items} if kind == "pack" else {item.name for item in self.of("pack", enabled_only=False)})
+        seen: dict[str, str] = {}
+        for item in items:
+            if item.name in seen:
+                raise RepoctlError(f"duplicate {item.label}: {seen[item.name]} and {item.path}")
+            seen[item.name] = item.path
+            # A project's typo is an error; a kit capability whose pack file this repository
+            # does not carry (an old or trimmed checkout) simply stays on.
+            if item.pack not in packs and item.path.startswith(".agents/"):
+                raise RepoctlError(f"{item.path}: unknown pack {item.pack!r} (packs: {', '.join(sorted(packs))})")
+        return items
+
+    def _with_provenance_packs(self, skills: list[Capability]) -> list[Capability]:
+        """A third-party skill's files are pinned by digest, so its pack is recorded with its provenance."""
+        packs = {}
+        for entry in self.project.get("skills", []):
+            if isinstance(entry, dict) and isinstance(entry.get("pack"), str):
+                packs[package_skill(entry.get("package", ""))] = entry["pack"]
+        return [Capability(item.kind, item.name, item.description, item.path, packs.get(item.name, item.pack), item.fields)
+                for item in skills]
+
+    @cached_property
+    def _plugin_load(self) -> tuple[list[Capability], list[tuple[str, str]]]:
+        return _plugins(self.root)
+
+    @property
+    def _plugins(self) -> list[Capability]:
+        return self._plugin_load[0]
+
+    @property
+    def plugin_errors(self) -> list[tuple[str, str]]:
+        """(file, one-line error) for each project plugin that failed to load; those plugins are skipped."""
+        return self._plugin_load[1]
+
+    @property
+    def items(self) -> list[Capability]:
+        return [item for kind in KINDS for item in self.of(kind, enabled_only=False)]
+
+    @cached_property
+    def pack_state(self) -> dict[str, bool]:
+        """Each pack's state: its declared default, overridden by project.toml [packs]."""
+        overrides = self.project.get("packs", {})
+        if not isinstance(overrides, dict) or not all(isinstance(value, bool) for value in overrides.values()):
+            raise RepoctlError("project.toml [packs] must map pack names to true or false")
+        state = {item.name: item.fields.get("default", "on") == "on" for item in self.of("pack", enabled_only=False)}
+        unknown = sorted(set(overrides) - set(state))
+        if unknown:
+            raise RepoctlError(f"project.toml [packs] names unknown packs: {', '.join(unknown)} (known: {', '.join(sorted(state))})")
+        state.update(overrides)
+        state[CORE] = True
+        return state
+
+    def enabled(self, item: Capability) -> bool:
+        return self.pack_state.get(item.pack, True)
+
+    @cached_property
+    def check_overrides(self) -> dict[str, str]:
+        """check name -> the project's reason, for each check `project.toml [checks]` downgrades to advisory.
+
+        The only supported value is severity = "advisory" with a reason: nothing here removes or skips a check
+        (docs/capabilities.md#configuration). A malformed entry is an error naming the line to fix.
+        """
+        table = self.project.get("checks", {})
+        if not isinstance(table, dict):
+            raise RepoctlError('project.toml [checks] must map a check name to {severity = "advisory", reason = "..."}')
+        known = {item.name: item for item in self.of("check", enabled_only=False)}
+        overrides: dict[str, str] = {}
+        for name, entry in table.items():
+            where = f"project.toml [checks.{name}]"
+            if name not in known:
+                raise RepoctlError(f"{where} names no check (known: {', '.join(sorted(known))})")
+            if name == "file-hygiene":
+                hygiene_allowlist(self.project)  # validates allow_paths; it exempts paths and never downgrades the check
+            extra = {"allow_paths"} if name == "file-hygiene" else set()
+            if not isinstance(entry, dict) or set(entry) - {"severity", "reason"} - extra:
+                raise RepoctlError(f'{where} must be a table with only severity = "advisory" and reason = "..."'
+                                   + (" (and allow_paths)" if extra else ""))
+            if "severity" not in entry and extra and "allow_paths" in entry and "reason" not in entry:
+                continue
+            if entry.get("severity") != "advisory":
+                raise RepoctlError(f'{where}: severity must be "advisory"; a check can be downgraded, never removed or skipped')
+            reason = entry.get("reason")
+            if not isinstance(reason, str) or len(reason.strip()) < 10:
+                raise RepoctlError(f"{where}: a reason is required (10+ characters): why this repository disagrees with the check")
+            if not known[name].fields["blocks"]:
+                raise RepoctlError(f"{where}: {name} is already advisory; delete the entry")
+            overrides[name] = " ".join(reason.split())
+        return overrides
+
+    def blocks(self, item: Capability) -> bool:
+        """Whether a check blocks here: its declaration, unless this project downgraded it. The one resolver."""
+        return bool(item.fields["blocks"]) and item.name not in self.check_overrides
+
+    def of(self, kind: str, *, enabled_only: bool = True) -> list[Capability]:
+        if kind not in self._kinds:
+            self._kinds[kind] = self._load(kind)
+        return [item for item in self._kinds[kind] if not enabled_only or self.enabled(item)]
+
+    def get(self, kind: str, name: str) -> Capability | None:
+        return next((item for item in self.of(kind, enabled_only=False) if item.name == name), None)
+
+    def enable_hint(self, item: Capability) -> str:
+        return f"{item.label} is in the {item.pack!r} pack, which is off: set `{item.pack} = true` under [packs] in project.toml"
+
+
+def downgrade_lines(project: dict[str, object]) -> list[str]:
+    """`name: reason` for each check `project.toml [checks]` downgrades (validated by Registry.check_overrides)."""
+    table = project.get("checks")
+    if not isinstance(table, dict):
+        return []
+    return [f"{name}: {' '.join(str(entry.get('reason', '')).split())}"
+            for name, entry in sorted(table.items()) if isinstance(entry, dict) and "severity" in entry]
+
+
+FINDING_PREFIX = re.compile(r"^\[([a-z0-9-]+)\] ")
+
+
+def blocking_reasons(registry: "Registry", findings: list[str]) -> list[str]:
+    """One `[check] why it blocks: reason` line per blocking check named in `findings`, in order."""
+    lines, seen = [], set()
+    for finding in findings:
+        match = FINDING_PREFIX.match(finding)
+        item = registry.get("check", match.group(1)) if match else None
+        if item is not None and registry.blocks(item) and item.name not in seen:
+            seen.add(item.name)
+            lines.append(f"[{item.name}] why it blocks: {' '.join(item.fields['reason'].split())}")
+    return lines

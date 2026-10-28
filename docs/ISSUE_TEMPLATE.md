@@ -1,0 +1,214 @@
+# Canonical issue record
+
+<!-- index: operate | Canonical issue shape and labels | Filing or materially updating an issue. -->
+<!-- covers: tools/kit/issues.py tools/kit/github.py tools/issue_contract.py tools/kit/ci.py .github/ISSUE_TEMPLATE/** .github/issue-labels.json .github/workflows/issue-contract.yml .github/workflows/require-issue-reference.yml -->
+
+GitHub Issues are the live task, status, and evidence register. This file owns
+the write-ahead rule and defines the minimum shape for a new or materially
+updated issue. Before a behavior, schema, contract, security, privacy, or
+operational change, search open and closed issues and `ERROR_LOG.md` by title,
+symptom, path, and topic first, then file one issue per independent root cause
+**before** implementation, carrying intended behavior, scope, risks, and
+evidence-producing acceptance criteria; file confirmed residuals as their own
+issues before completion. Update the existing record when the
+root cause and acceptance boundary match.
+
+## No GitHub remote yet
+
+When the repository has no GitHub target (`agent-first`), `make issue` writes
+the record as `Local-WAL-NNN` to ignored `.agent/wal/` and checks only what the
+plan needs now: a `### Summary` with the outcome and at least one
+`- [ ]` acceptance criterion (plus the labels and the secret scan). The full
+contract below applies when you file the draft for real once a remote exists,
+so a local plan never costs a round of disclosure paperwork. Cite the id in
+commits. Once the repository has a GitHub target, `make issue WAL=all` (or
+`WAL=Local-WAL-002`) files each draft under the full contract, prints the new
+issue URL, and marks the draft `Filed:` so it is never filed twice; a draft
+that does not meet the contract yet is listed with the reason and left as is. Assembling a
+`Local-WAL` packet is not authorization to implement: the draft (or the issue)
+must exist before the change it covers starts. Never keep live work in a tracked Markdown file; `make check` rejects
+tracked backlogs.
+
+Under the `regulated` profile, public filing also needs `PUBLIC_REVIEWED=1`
+and `REVIEW_EVIDENCE=<reviewed record>` (see [`../CONTRIBUTING.md`](../CONTRIBUTING.md)).
+`make issue` and the CI issue check apply one shared rule to the
+`Reviewer/date` line: a real name and an ISO date that is not in the future.
+
+## Duplicate check
+
+Record one line in the issue:
+
+```text
+Duplicate check: searched title, symptom, and path for <terms/files>; reused #N | no duplicate found
+```
+
+A new issue is justified only for an independent root cause, owner/gate, or
+deliberate reopening. Link the predecessor and explain the split.
+
+Native forms are lightweight intake in `agent-first`; an agent or maintainer
+adds the canonical labels during triage. The `repoctl issue` path always emits
+the full required label set. In `regulated`, use the validated CLI/private
+route rather than native forms so the review-evidence and disclosure gates are
+not bypassed. When a natively filed issue misses the contract, the issue-contract
+check comments with each problem and its fix, editing one marked comment rather than adding a new one per
+event; runs for the same issue cancel each other, so a filing with several labels validates once.
+`make issue` treats an existing issue as a duplicate when its normalized title matches, it carries the same
+`topic:` label, or it shares at least two path-shaped tokens with the new body. The `Reviewer/date` must not be in
+the future, judged against the latest calendar day anywhere (UTC+14), so a reviewer's local date always passes;
+it never expires, because it records the review of that text.
+`make kit-report` files through the same contract and duplicate check on the
+template's repository (`[template].source`) instead of this one
+([`kit-update.md`](./kit-update.md)).
+What changed in the covered code last: `issues.py`, `github.py`, and `ci.py`
+now run every git call through one wrapper (`gitinfo.run_git`) and date records
+with `core.today()` (one UTC day); the contract above is unchanged.
+
+## Classification
+
+Use exactly one label from each required family:
+
+| Family | Allowed values |
+|---|---|
+| `type:*` | `bug`, `security`, `privacy`, `compliance`, `audit`, `task`, `operations`, `documentation`, `enhancement` |
+| `priority:*` | `P0`, `P1`, `P2`, `P3` |
+| `area:*` | `security`, `privacy`, `legal`, `operations`, `platform`, `documentation`, `web`, `game`, `media`, `data`, `repo` |
+| `topic:*` | one stable lowercase kebab-case topic |
+| `status:*` | `triage`, `ready`, `in-progress`, `blocked`, `fixed`, `wont-fix` |
+| `gate:*` | optional: `operator-action`, `counsel-review`, `provider-evidence`, `deployment-evidence`, `hardware-validation` |
+| `surface:*` | optional: `repo`, `web`, `game`, `media`, `backend`, `data`, `docs`, `provider`, `deployment` |
+
+`ready` means a runnable validation experiment exists. In `regulated`, the
+full numbered `How to reproduce` section is required; in `agent-first`, the
+compact contract may put the validation evidence in `Evidence`. External
+work remains `blocked` with its gate and named owner. The public `repoctl issue`
+adapter refuses `type: security`; use the private route in
+[`../SECURITY.md`](../SECURITY.md), then file a redacted follow-up only after
+coordinated disclosure. A unit test never proves deployment, provider
+propagation, hardware behavior, or legal approval.
+
+## Required body
+
+`[governance].profile = "regulated"` preserves the full headings below. The
+default `agent-first` profile requires the compact contract: `Summary`,
+`Acceptance criteria`, `Evidence`, `Disclosure classification`, and
+`Dependencies and handoff`; add the diagnostic headings when they help a
+reviewer. `minimal` delegates the issue contract to the host organization. Native
+GitHub forms are for `agent-first` intake; `regulated` uses the CLI/private route
+and `minimal` uses the host's route, so a project using either profile must
+remove or disable `.github/ISSUE_TEMPLATE/` before `make check` is green. The
+profile sets how much friction the gates apply overall, not only this contract;
+change it deliberately and record the reason in the issue.
+Replace placeholders; write `N/A — reason` when a section genuinely does not
+apply.
+
+`tools/issue_contract.py` owns the headings, the duplicate-check line, and the
+disclosure, owner, and sensitive-word patterns; `make issue` and the CI check
+both call `issues.issue_problems`. The `###` headings below must equal its
+`HEADINGS["regulated"]`, and the native forms' Type, Priority, Area, and Status
+dropdowns must equal `.github/issue-labels.json` minus the values the public
+adapters refuse (`type: security`); a test enforces both.
+
+### Summary
+
+One sentence: concrete symptom or outcome and impact.
+
+### What happens
+
+- **Observed:**
+- **Expected:**
+- **Affected subject/surface:**
+
+### Where
+
+- **Entry point / surface:**
+- **Paths, components, data, or environment:**
+- **Evidence location:**
+
+### When
+
+- **Preconditions:**
+- **Sequence, race, or timing:**
+- **Frequency:** `always`, `intermittent`, or `once observed`
+- **First observed / last known good:**
+
+### Why
+
+- **Root-cause status:** `confirmed`, `likely`, or `open question`
+- **Cause and contributing factors:**
+- **Why it matters now:**
+
+### How to reproduce
+
+Give the smallest deterministic steps or validation experiment.
+
+1. [Starting fixture/environment.]
+2. [Exact action.]
+3. [Observable result and where to inspect it.]
+
+- **Actual result:**
+- **Expected result:**
+- **Evidence captured:**
+- **Cleanup / rollback:**
+
+### Impact and scope
+
+- **Impact / risk:**
+- **In scope:**
+- **Out of scope / linked residual:**
+
+### Acceptance criteria
+
+Use objective checkboxes and name the evidence for each. Include a regression
+or negative case, relevant contract/migration checks, and a real artifact or
+state observation where applicable.
+
+- [ ] [Criterion and evidence.]
+- [ ] [Negative/failure case.]
+- [ ] [External provider/deployment/hardware/counsel evidence, or N/A.]
+
+### Evidence
+
+Mark every item as `source`, `test`, `deployed`, `provider`, `hardware`, or
+`counsel`; redact secrets and personal data.
+
+### Disclosure classification
+
+- **Disclosure class:** `ordinary` or `public-reviewed`
+- **Public-safe:** yes
+- **Security/privacy review:** `not applicable` or link the private review record
+- **Reviewer/date:** `[REQUIRED for public filing]`
+
+`ordinary` means the issue contains no security/privacy, personal-data, secret,
+or sensitive-provider subject; `public-reviewed` means a reviewer explicitly
+approved a redacted public form. This is an explicit publication gate, not a
+legal conclusion or a perfect classifier. A body containing an unpatched
+vulnerability, exposed secret, raw personal data, or sensitive provider detail
+belongs in the private route in [`../SECURITY.md`](../SECURITY.md), not in a
+public Issue.
+
+### Dependencies and handoff
+
+- **Owner / next action:**
+- **External dependency:** `none` or named owner/gate
+- **Linked issue / follow-up:**
+- **Risk of leaving unresolved:**
+
+## Resolution record
+
+Complete only when the issue is ready to close:
+
+- **Root cause and final change:**
+- **PR / commit / artifact:**
+- **Verification performed and observed results:**
+- **Residual risk / operational action:**
+- **Closed on (UTC):**
+
+## Small update
+
+```text
+Status: <old> → <new>
+Owner: <name/team>
+Next: <one concrete action>
+Evidence: <link or command>
+Blocker: <dependency or none>
+```

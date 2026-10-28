@@ -1,0 +1,30 @@
+name: Issue contract
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled, unlabeled, transferred]
+
+concurrency:
+  group: issue-contract-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canonical-contract:
+    name: canonical issue contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate classification and disclosure fields
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: python3 tools/repoctl.py --root . ci issue-contract

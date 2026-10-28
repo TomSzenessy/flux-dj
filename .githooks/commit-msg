@@ -1,0 +1,19 @@
+#!/bin/sh
+# Host-neutral commit gate (docs/self-healing.md): every agent and human gets the
+# same owed-docs, derived-file, and marker checks as hooked agent hosts.
+# Installed by `make start` / the session-start hook via core.hooksPath.
+# Bypass deliberately with `git commit --no-verify` and say why in the PR.
+top=$(git rev-parse --show-toplevel)
+"$top/tools/repoctl" --root "$top" hook commit-msg "$1"
+status=$?
+[ "$status" -eq 0 ] && exit 0
+# 126/127 = the launcher or a Python 3.11+ interpreter is missing: nothing ran, so
+# the gate cannot judge. Warn loudly and let the commit through (CI still checks).
+if [ "$status" -eq 126 ] || [ "$status" -eq 127 ]; then
+  echo "WARNING: commit gate NOT RUN: repoctl could not start (exit $status); install Python 3.11+ or fix tools/repoctl" >&2
+  exit 0
+fi
+# Everything else blocks: 3 = the gate's findings; any other status means the kit
+# (a plugin, the registry, repoctl itself) is broken, which must never skip the gate.
+[ "$status" -ne 3 ] && echo "Commit blocked: repoctl exited $status (see above); fix it, or bypass with --no-verify and say why in the PR" >&2
+exit 1
