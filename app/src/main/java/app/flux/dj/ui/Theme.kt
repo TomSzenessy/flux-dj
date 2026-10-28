@@ -87,6 +87,7 @@ object D {
     val r16 = 16.dp
     val r18 = 18.dp
     val r20 = 20.dp
+    val r22 = 22.dp
     val r24 = 24.dp
 }
 

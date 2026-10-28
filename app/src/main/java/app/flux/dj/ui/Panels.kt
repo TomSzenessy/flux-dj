@@ -59,8 +59,8 @@ fun SidePanel(visible: Boolean, onDismiss: () -> Unit, title: String, width: Dp 
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
             Column(
                 Modifier.widthIn(max = width).fillMaxWidth(0.94f).fillMaxHeight()
-                    .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp)).background(C.panelDeep)
-                    .border(1.dp, C.line, RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp))
+                    .clip(RoundedCornerShape(topStart = D.r22, bottomStart = D.r22)).background(C.panelDeep)
+                    .border(1.dp, C.line, RoundedCornerShape(topStart = D.r22, bottomStart = D.r22))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
