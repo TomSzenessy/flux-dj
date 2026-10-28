@@ -160,24 +160,35 @@ object Decoder {
                                 if (inCh > 1) chunk[a + 1] = (yr + 0.5f).toInt().toShort()
                             }
                         }
-                        // linear resample; frame -1 is the last frame of the previous chunk
+                        // Linear resample; frame -1 is the last frame of the previous chunk.
+                        // One ensure() for the whole chunk and local array/offset variables: the
+                        // per-sample closure call was ~460 ns per output frame on the tablet.
                         val step = inRate.toDouble() / SR
-                        ensure(((frames + 2) / step).toInt() * 2 + 4)
-                        while (!outDone) {
-                            val i0 = Math.floor(srcPos).toInt()
-                            if (i0 + 1 >= frames) break
-                            val fr = (srcPos - i0).toFloat()
-                            val l0: Float; val r0: Float
-                            if (i0 < 0) { l0 = pl; r0 = pr } else {
-                                val a = i0 * inCh
-                                l0 = chunk[a].toFloat(); r0 = if (inCh > 1) chunk[a + 1].toFloat() else l0
+                        if (ensure((((frames + 2) / step).toInt() + 4) * 2)) {
+                            var o = out
+                            var w = outLen
+                            val cap = o.size
+                            while (true) {
+                                val i0 = if (srcPos < 0.0) -1 else srcPos.toInt()
+                                if (i0 + 1 >= frames) break
+                                if (w + 2 > cap) {
+                                    outLen = w
+                                    if (!ensure(2)) { o = out; w = outLen; break }
+                                    o = out; w = outLen
+                                }
+                                val fr = (srcPos - i0).toFloat()
+                                val l0: Float; val r0: Float
+                                if (i0 < 0) { l0 = pl; r0 = pr } else {
+                                    val a = i0 * inCh
+                                    l0 = chunk[a].toFloat(); r0 = if (inCh > 1) chunk[a + 1].toFloat() else l0
+                                }
+                                val bb = (i0 + 1) * inCh
+                                val l1 = chunk[bb].toFloat(); val r1 = if (inCh > 1) chunk[bb + 1].toFloat() else l1
+                                o[w++] = (l0 + (l1 - l0) * fr).toInt().toShort()
+                                o[w++] = (r0 + (r1 - r0) * fr).toInt().toShort()
+                                srcPos += step
                             }
-                            val bb = (i0 + 1) * inCh
-                            val l1 = chunk[bb].toFloat(); val r1 = if (inCh > 1) chunk[bb + 1].toFloat() else l1
-                            if (!ensure(2)) break
-                            out[outLen++] = (l0 + (l1 - l0) * fr).toInt().toShort()
-                            out[outLen++] = (r0 + (r1 - r0) * fr).toInt().toShort()
-                            srcPos += step
+                            outLen = w
                         }
                         if (frames > 0) srcPos -= frames
                     }
