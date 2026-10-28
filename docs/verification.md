@@ -1,0 +1,109 @@
+# Verification and independent quality loop
+
+<!-- index: operate | Evidence, quality loop | Substantial work before implementation; review or quality claim. -->
+
+“Done” means the issue's acceptance criteria have observable evidence. A build,
+lint run, or green return code is necessary but not sufficient.
+
+This file owns the canonical quality-loop procedure and domain oracles. The
+[quality-loop skill](../.agents/skills/quality-loop/SKILL.md) is a small
+host invocation adapter, not a second copy of the rules.
+
+## Profile-aware evidence
+
+The filing profile (`agent-first`, `regulated`, `minimal`) and what each one
+requires are defined in [`ISSUE_TEMPLATE.md`](./ISSUE_TEMPLATE.md); see
+`project.toml` and `AGENTS.md` for the current one. A local pre-filing packet
+uses `Local-WAL: <id>` and a real commit/diff/artifact. It is
+not a replacement for the GitHub issue register.
+
+
+Use the smallest sufficient evidence, then escalate:
+
+1. **Static:** parse/type/lint/schema checks.
+2. **Focused behavior:** unit or contract test at the changed seam.
+3. **Integration:** real database, filesystem, renderer, browser, queue, or
+   provider adapter with a failure/retry path.
+4. **Artifact:** inspect the rendered UI, image, frame, audio waveform, export,
+   API payload, row/file/object state, or performance trace users receive.
+5. **Independent review:** a fresh agent or reviewer checks the issue, diff,
+   standards, security/privacy impact, and artifact without editing first.
+6. **Deployment/provider/hardware/counsel evidence:** attach separately; local
+   evidence never silently substitutes for it. A configured GitHub target is a
+   local binding check; live API/advisory verification belongs to a separately
+   authorized evidence record, not general repository verification.
+
+The pull-request issue-reference check (`repoctl ci pr-reference`, run by the
+workflow and testable locally) requires a closing keyword, an open
+issue rather than a pull request, and the profile's canonical issue headings and
+duplicate-search record. GitHub issues are editable, so this is not by itself
+proof that the acceptance contract predated implementation or remained
+immutable. Projects that need a stronger receipt should commit a redacted
+pre-change record (issue URL/creation time, contract hash, scope/risk, and
+verification plan) before implementation and bind review evidence to the exact
+head SHA. Never call the mutable issue itself an immutable audit log.
+
+## The quality loop
+
+For a substantial or subjective deliverable, start during framing, before implementation;
+use the [delegation threshold](./delegation.md#when-to-delegate) for skill selection
+and scoped owners:
+
+1. Split the issue into independently verifiable deliverables.
+2. Give each deliverable a builder brief with its oracle and constraints.
+3. Run builders in parallel only when their seams do not conflict.
+4. Give a fresh, demanding critic the original acceptance criteria and the real
+   artifact. The critic should try to falsify the claim, not rationalize it.
+5. Fix confirmed blockers, rerun the oracle, and record the new evidence.
+6. Stop after three focused iterations or when the marginal change no longer
+   improves the declared bar. File the remaining disagreement as an issue.
+
+This generalizes the useful part of the Matt Shumer “fan out and critic” loop:
+independent coverage, harsh review, observable comparison, and iteration. It
+does **not** accept an unbounded “perfect” promise. Quality is relative to a
+declared target, resolution, accessibility level, frame rate, privacy boundary,
+or other measurable oracle.
+
+## Domain oracles
+
+- **Web/app:** functional browser path, responsive screenshots reviewed against
+  the `ux-quality` skill, accessibility, performance budget, and no
+  console/network errors on the critical path.
+- **Game:** deterministic gameplay scenario, input/frame/performance trace,
+  save/load check, and rendered play session at target settings.
+- **3D/Blender:** deterministic scene/render command, geometry/material sanity,
+  contact sheet or turntable, and visual comparison at delivery resolution.
+- **Video/audio:** source-to-export render, codec/container and duration checks,
+  representative playback, and waveform/frame inspection.
+- **Backend/data:** real request and persisted state, authorization negatives,
+  retry/idempotency, migration/retention behavior, and failure evidence.
+- **Legal/privacy:** factual source inventory, link/format validation, counsel
+  gate where applicable, and a rendered human review.
+
+## Ceremony by risk
+
+How much of this loop a change needs is set by its risk tier
+([`self-healing.md`](./self-healing.md#ceremony-by-risk)); the independent
+reviewer a tier may require is the `critic` role
+([`delegation.md`](./delegation.md)) before completion. A passing critic
+record may cover later commits only when its commit is an ancestor of HEAD
+and every subsequent committed path is `low`; normal/high deltas require a
+new review. The gate's history and refusal rules live in
+[`self-healing.md`](./self-healing.md#critic-evidence-the-gate-can-read).
+
+## Before completion
+
+Run `make done`, inspect the real artifact, generate a fresh review packet with
+`make review-packet ISSUE_FILE=...`, and resolve every blocker. Report skipped
+checks and external gates explicitly. “No issues found” means the declared scope
+was checked to the stated coverage—not that the entire universe is bug-free.
+
+Before an irreversible event (a launch, a deadline, an official submission, a
+migration), "ready" also lists what was not tested: every candidate improvement
+you ranked but did not measure and every known risk, each filed as an issue, so
+the owner decides with them in view. Routine changes with no such event need no
+disclosure.
+
+A long-running local server (a dev server, an inspection page) keeps the code it
+loaded: restart it after code changes, or have it report that its code is
+stale, before you or the owner trust what it shows.

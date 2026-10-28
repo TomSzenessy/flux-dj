@@ -1,0 +1,79 @@
+name: specialist scans
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  # Weekly full link scan: external link rot shows up as a failed scheduled
+  # run; pull requests only scan the Markdown they change.
+  schedule:
+    - cron: "23 6 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: specialist-scans-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  secrets:
+    if: github.event_name != 'pull_request'
+    name: maintained secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+  links:
+    if: github.event_name != 'push'
+    name: maintained Markdown link scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select Markdown to scan
+        id: markdown
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        # Pull requests: changed files only, restricted to safe names because
+        # file names are untrusted input. Schedule and manual runs: everything.
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --diff-filter=ACMR "origin/$BASE...HEAD" -- '*.md' | { grep -E '^[A-Za-z0-9_.][A-Za-z0-9._/-]*$' || true; } | tr '\n' ' ')
+          else
+            files="./**/*.md"
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+      - name: Lychee
+        if: steps.markdown.outputs.files != ''
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # Exact-path exclusions are manually reviewed primary sources that
+          # reject automated clients; do not broaden these to whole domains.
+          args: >-
+            --no-progress
+            --max-retries 4
+            --retry-wait-time 5
+            --accept 200,202,206
+            --exclude 'https://www\.gesetze-im-internet\.de/.*'
+            --exclude 'https://openai\.com/index/harness-engineering/?'
+            --exclude 'https://www\.iso\.org/standard/(74393|78176|81291)\.html'
+            ${{ steps.markdown.outputs.files }}
+          fail: true

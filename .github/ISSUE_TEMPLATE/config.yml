@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/TomSzenessy/AI_TEMPLATE/blob/main/SECURITY.md
+    about: Report vulnerabilities, secrets, or personal data privately. Do not open a public issue.

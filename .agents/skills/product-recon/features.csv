@@ -1,0 +1,4 @@
+feature,area,priority,status,evidence,acceptance,source
+{{feature in plain words}},{{screen or flow it belongs to}},must,no,,{{what a test or screenshot must show}},product-recon
+{{feature}},{{area}},should,no,,,product-recon
+"{{out-of-reach feature: licensed content or a partner network}}",{{area}},could,skip,,{{why it is left out}},product-recon

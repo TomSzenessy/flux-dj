@@ -1,0 +1,190 @@
+# Machine-readable resource router. This is an allowlist of read-only starting
+# points, not an instruction to install packages or MCP servers automatically.
+schema = 1
+
+[[resources]]
+id = "react-docs"
+kind = "library-docs"
+source = "https://react.dev/"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "web"
+summary = "Official React documentation and versioned API guidance."
+
+[[resources]]
+id = "react-native-docs"
+kind = "library-docs"
+source = "https://reactnative.dev/docs/getting-started"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "mobile"
+summary = "Official React Native guides, architecture, testing, and native integration."
+
+[[resources]]
+id = "expo-docs"
+kind = "library-docs"
+source = "https://docs.expo.dev/"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "mobile"
+summary = "Official Expo tooling, EAS, runtime, and store-submission documentation."
+
+[[resources]]
+id = "tailwind-docs"
+kind = "library-docs"
+source = "https://tailwindcss.com/docs"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "web"
+summary = "Official Tailwind CSS installation, compatibility, and styling documentation."
+
+[[resources]]
+id = "shadcn-docs"
+kind = "library-docs"
+source = "https://ui.shadcn.com/docs"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "web"
+summary = "Official shadcn/ui component, theming, registry, and installation documentation."
+
+[[resources]]
+id = "apple-platform"
+kind = "platform-policy"
+source = "https://developer.apple.com/"
+trust = "official"
+access = "read-only"
+scope = "apple"
+summary = "Apple developer, design, platform, and App Store submission guidance."
+
+[[resources]]
+id = "android-platform"
+kind = "platform-policy"
+source = "https://developer.android.com/"
+trust = "official"
+access = "read-only"
+scope = "android"
+summary = "Android development, design, testing, and distribution guidance."
+
+[[resources]]
+id = "wcag"
+kind = "accessibility"
+source = "https://www.w3.org/WAI/standards-guidelines/wcag/"
+trust = "official"
+access = "read-only"
+scope = "accessibility"
+summary = "W3C Web Content Accessibility Guidelines and supporting evaluation guidance."
+
+[[resources]]
+id = "owasp"
+kind = "security"
+source = "https://cheatsheetseries.owasp.org/"
+trust = "official"
+access = "read-only"
+scope = "security"
+summary = "OWASP primary cheat sheets for application, API, CI/CD, and security review."
+
+[[resources]]
+id = "ffmpeg"
+kind = "media"
+source = "https://ffmpeg.org/documentation.html"
+trust = "official"
+access = "read-only"
+scope = "media"
+summary = "Official FFmpeg codec, filter, format, and pipeline documentation."
+
+[[resources]]
+id = "blender"
+kind = "media"
+source = "https://docs.blender.org/manual/en/latest/"
+trust = "official"
+access = "read-only"
+scope = "3d"
+summary = "Official Blender manual for modeling, rendering, animation, and pipelines."
+
+[[resources]]
+id = "skills-directory"
+kind = "skills"
+source = "https://skills.sh/"
+trust = "discovery"
+access = "read-only"
+mcp = "find-skills"
+scope = "agent"
+summary = "Skill discovery directory; inspect source, license, permissions, and revision before use."
+
+[[resources]]
+id = "apple-hig"
+kind = "design"
+source = "https://developer.apple.com/design/human-interface-guidelines"
+trust = "official"
+access = "read-only"
+scope = "apple"
+summary = "Apple Human Interface Guidelines: platform conventions, components, typography, accessibility."
+
+[[resources]]
+id = "material-design"
+kind = "design"
+source = "https://m3.material.io/"
+trust = "official"
+access = "read-only"
+scope = "android"
+summary = "Material Design 3: Android and cross-platform components, color, type, and motion system."
+
+[[resources]]
+id = "flutter-docs"
+kind = "library-docs"
+source = "https://docs.flutter.dev/"
+trust = "official"
+access = "read-only"
+mcp = "context7"
+scope = "mobile"
+summary = "Official Flutter framework, widget, tooling, and platform-integration documentation."
+
+[[resources]]
+id = "nngroup-heuristics"
+kind = "design"
+source = "https://www.nngroup.com/articles/ten-usability-heuristics/"
+trust = "reviewed"
+access = "read-only"
+scope = "ux"
+summary = "Nielsen Norman Group's ten usability heuristics; the baseline for UX reviews."
+
+[[resources]]
+id = "laws-of-ux"
+kind = "design"
+source = "https://lawsofux.com/"
+trust = "reviewed"
+access = "read-only"
+scope = "ux"
+summary = "Psychology principles behind interface design (Hick, Fitts, Jakob, peak-end, and more)."
+
+[[resources]]
+id = "deceptive-patterns"
+kind = "design"
+source = "https://www.deceptive.design/types"
+trust = "reviewed"
+access = "read-only"
+scope = "ux"
+summary = "Catalogue of deceptive (dark) patterns to avoid in onboarding, pricing, and consent."
+
+[[resources]]
+id = "rea-authorized-analysis"
+kind = "skills"
+source = "https://github.com/morluto/rea/tree/79156e5bed1d72b83ade0483246f457b337b7e59"
+trust = "discovery"
+access = "read-only"
+scope = "reverse-engineering"
+summary = "Source-reviewed candidate for authorized shipped-artifact and behavior investigation; project-local runtime/package approval and trial remain separate."
+
+[[resources]]
+id = "api-anything-authorized-replay"
+kind = "skills"
+source = "https://github.com/goodnight000/api-anything/blob/4a785e8d9e72a00e2dddc0dc56569a86826df07b/README.md"
+trust = "discovery"
+access = "read-only"
+scope = "reverse-engineering"
+summary = "Pinned reference for authorized HTTP request learning/replay; inspect source, license, permissions, revision and data destinations before any use; link-only, not a default dependency."

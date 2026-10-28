@@ -1,0 +1,29 @@
+name: Require issue reference
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  issue-reference:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    name: issue reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The validator reads project.toml (governance profile), so check out the
+      # pull request's tree; read-only token, no persisted credentials.
+      - name: Check out pinned revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate linked issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        run: python3 tools/repoctl.py --root . ci pr-reference
