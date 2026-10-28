@@ -53,7 +53,7 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TopBar(c, onLibrary = { libTarget = -1; sheet = Sheet.LIBRARY }, onFx = { sheet = Sheet.FX }, onOut = { sheet = Sheet.OUT }, onView = { sheet = Sheet.VIEW },
-                modifier = Modifier.fillMaxWidth().height(40.dp))
+                modifier = Modifier.fillMaxWidth().height(44.dp))
             if (c.view.waves) {
                 Column(Modifier.weight(if (c.view.overview) 1.05f else 0.85f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     WaveStrip(c, 0, c.view.overview, { libTarget = 0; sheet = Sheet.LIBRARY }, Modifier.weight(1f).fillMaxWidth())
@@ -226,7 +226,7 @@ private fun fmt(s: Int) = String.format("%d:%02d", s / 60, s % 60)
 @Composable
 private fun TopChip(text: String, on: Boolean, color: Color, sub: String? = null, onClick: () -> Unit) {
     Row(
-        Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).background(if (on) color.copy(alpha = .16f) else C.s2)
+        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(if (on) color.copy(alpha = .16f) else C.s2)
             .border(1.dp, if (on) color else C.line, RoundedCornerShape(16.dp)).pointerInput2(onClick).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {

@@ -322,7 +322,7 @@ fun Chip(text: String, on: Boolean, color: Color = C.fx, modifier: Modifier = Mo
         onUp = { cb() }, pressOnDown = false, haptic = false, label = text,
     ) { _ ->
         Box(contentAlignment = Alignment.Center) {
-            Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 4.dp, vertical = 5.dp), maxLines = 1, softWrap = false)
+            Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 5.dp, vertical = 7.dp), maxLines = 1, softWrap = false)
         }
     }
 }
@@ -332,11 +332,11 @@ fun Toggle(on: Boolean, onChange: (Boolean) -> Unit, color: Color = C.a, label: 
     val cur by rememberUpdatedState(on)
     val cb by rememberUpdatedState(onChange)
     Box(
-        Modifier.size(44.dp, 26.dp).clip(RoundedCornerShape(13.dp)).background(if (on) color.copy(alpha = .9f) else C.s4)
+        Modifier.size(48.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(if (on) color.copy(alpha = .9f) else C.s4)
             .semantics { role = Role.Switch; contentDescription = label; stateDescription = if (on) "On" else "Off" }
             .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); val up = waitForUpOrCancellation(); if (up != null) cb(!cur) } }
     ) {
-        Box(Modifier.padding(3.dp).size(20.dp).offset(x = if (on) 18.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(Color.White))
+        Box(Modifier.padding(4.dp).size(24.dp).offset(x = if (on) 16.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(Color.White))
     }
 }
 

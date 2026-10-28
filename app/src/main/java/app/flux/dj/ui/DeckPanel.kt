@@ -39,22 +39,28 @@ fun beatLabel(b: Float): String = when {
 
 @Composable
 fun DeckPanel(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modifier = Modifier) {
-    val col = C.deck(i)
     val v = c.view
     val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, C.deep))).border(1.dp, C.line, shape).padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val jog = @Composable { m: Modifier -> if (v.jog) JogColumn(c, i, onLoad, m) }
-        val pads = @Composable { m: Modifier -> if (v.pads || v.loops) PadColumn(c, i, m) }
-        val pitch = @Composable { PitchColumn(c, i, Modifier.width(36.dp).fillMaxHeight()) }
-        if (i == 0) {
-            jog(Modifier.weight(1.35f).fillMaxHeight()); pads(Modifier.weight(1.15f).fillMaxHeight()); pitch()
-        } else {
-            pitch(); pads(Modifier.weight(1.15f).fillMaxHeight()); jog(Modifier.weight(1.35f).fillMaxHeight())
+    BoxWithConstraints(modifier) {
+        // On a phone-landscape deck (~150 dp wide) the jog would be a 50 dp toy; hide it and
+        // keep the pads/faders usable instead of clipping every column.
+        val compact = maxWidth < 260.dp
+        val showJog = v.jog && !compact
+        Row(
+            Modifier.fillMaxSize().clip(shape).background(Brush.verticalGradient(listOf(C.s1, C.deep)))
+                .border(1.dp, C.line, shape).padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val jog = @Composable { m: Modifier -> if (showJog) JogColumn(c, i, onLoad, m) }
+            val pads = @Composable { m: Modifier -> if (v.pads || v.loops) PadColumn(c, i, m) }
+            val pitch = @Composable { PitchColumn(c, i, Modifier.width(36.dp).fillMaxHeight()) }
+            if (i == 0) {
+                jog(Modifier.weight(1.35f).fillMaxHeight()); pads(Modifier.weight(1.15f).fillMaxHeight()); pitch()
+            } else {
+                pitch(); pads(Modifier.weight(1.15f).fillMaxHeight()); jog(Modifier.weight(1.35f).fillMaxHeight())
+            }
+            if (!showJog && !v.pads && !v.loops) Spacer(Modifier.weight(1f))
         }
-        if (!v.jog && !v.pads && !v.loops) Spacer(Modifier.weight(1f))
     }
 }
 
@@ -63,7 +69,7 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
     val u = c.ui[i]; val d = c.engine.decks[i]
     val col = C.deck(i)
     BoxWithConstraints(modifier) {
-        val tH = 46.dp; val chipsH = 26.dp
+        val tH = 46.dp; val chipsH = 32.dp
         val showTitle = !c.view.waves
         val jogS = minOf(maxWidth, maxHeight - tH - chipsH - 12.dp - (if (showTitle) 40.dp else 0.dp)).coerceAtLeast(70.dp)
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)) {
@@ -132,7 +138,7 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (v.pads) {
             // mode selector
-            Row(Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(10.dp)).background(C.s2).padding(2.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(10.dp)).background(C.s2).padding(2.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                 MODES.forEachIndexed { k, name ->
                     val on = u.padMode == k
                     Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(if (on) C.s4 else Color.Transparent)
@@ -149,7 +155,7 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
             }
         }
         if (v.loops) {
-            Row(Modifier.fillMaxWidth().height(34.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Chip("÷2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(0.5f) }
                 PillButton("LOOP ${beatLabel(u.loopBeats)}", u.loopOn, C.fx, Modifier.weight(2.2f).fillMaxHeight(), solid = true) { c.loopTogglePad(i) }
                 Chip("×2", false, C.fx, Modifier.weight(1f).fillMaxHeight()) { d.loopScale(2f) }

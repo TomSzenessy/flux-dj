@@ -460,7 +460,7 @@ private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: 
 
 @Composable
 private fun ZoomBtn(label: String, onClick: () -> Unit) {
-    Box(Modifier.size(30.dp, 24.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(36.dp, 28.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp)).pointerInput2(onClick), contentAlignment = Alignment.Center) {
         Text(label, style = T.tab.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
     }
 }
@@ -505,7 +505,7 @@ private fun GridBar(c: Controller, i: Int, modifier: Modifier) {
 
 @Composable
 private fun GridBtn(label: String, accent: Boolean = false, onClick: () -> Unit) {
-    PressBox(Modifier.height(28.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
+    PressBox(Modifier.height(32.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
         Box(
             Modifier.fillMaxHeight().background(if (p) C.fx.copy(alpha = .5f) else if (accent) C.fx.copy(alpha = .2f) else C.s3)
                 .border(1.dp, if (accent) C.fx else C.line, RoundedCornerShape(7.dp)).padding(horizontal = 9.dp),

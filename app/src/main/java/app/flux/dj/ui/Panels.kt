@@ -89,6 +89,7 @@ private fun FilterRow(label: String, opts: List<Pair<String, Boolean>>, onPick: 
 fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> Unit, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPermission: () -> Unit, onHistory: () -> Unit = {}, onImportXml: () -> Unit = {}, onSources: () -> Unit = {}) {
     SidePanel(visible, onDismiss, "Library", 580.dp) {
         var q by remember { mutableStateOf("") }
+        val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 520
         val rev = c.libRev
         val ref: RefMeta? = remember(visible, target, rev, c.ui[0].title, c.ui[1].title) { c.refMeta(target) }
         val dest = if (target in 0..1) target else c.idleDeck()
@@ -149,7 +150,7 @@ fun LibraryPanel(c: Controller, visible: Boolean, target: Int, onDismiss: () -> 
             if (c.hasPlex) Chip("Plex", c.filterSource == "plex", C.ok, Modifier.height(30.dp)) { c.filterSource = "plex" }
             if (c.hasDrive) Chip("Drive", c.filterSource == "drive", C.ok, Modifier.height(30.dp)) { c.filterSource = "drive" }
         }
-        Text("PLEX / DRIVE green ✓ = cached (tap to remove) · red ⇩ = cloud (tap to cache) · RB = rekordbox collection grid · ✎ = hand-edited grid", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 9.sp, fontWeight = FontWeight.Normal))
+        if (!compact) Text("PLEX / DRIVE green ✓ = cached (tap to remove) · red ⇩ = cloud (tap to cache) · RB = rekordbox collection grid · ✎ = hand-edited grid", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 9.sp, fontWeight = FontWeight.Normal))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip(if (c.activeFilters > 0) "Filters · ${c.activeFilters}" else "Filters", filtersOpen || c.activeFilters > 0, C.ok, Modifier.height(30.dp)) { filtersOpen = !filtersOpen }
             if (c.activeFilters > 0) Chip("Clear", false, C.ok, Modifier.height(30.dp)) { c.filterKey = 0; c.filterBpm = 0; c.filterEnergy = 0; c.filterVibe = null; c.filterSource = null }

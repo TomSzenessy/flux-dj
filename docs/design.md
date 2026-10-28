@@ -88,3 +88,10 @@ Canvas draw lambdas reuse remembered arrays and paths; they must not allocate a
 `FloatArray`, `Path`, `Offset` list or cache-key string per frame. Waveform
 geometry is built once per screenful and translated while scrolling. The frame
 pump idles when no deck, preview, recorder, transition or analysis is running.
+
+## Compact layout
+
+A deck narrower than 260 dp (phone landscape) hides the jog and keeps pads,
+faders and tempo usable; the library drops its provenance legend below 520 dp of
+screen height, and sheets clamp to 94% width. The Align sheet scrolls. This is a
+deliberate degradation, not a second design.
