@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.flux.dj.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -42,7 +44,7 @@ fun beatLabel(b: Float): String = when {
 @Composable
 fun DeckPanel(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modifier = Modifier) {
     val v = c.view
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(D.r16)
     BoxWithConstraints(modifier) {
         // On a phone-landscape deck (~150 dp wide) the jog would be a 50 dp toy; hide it and
         // keep the pads/faders usable instead of clipping every column.
@@ -76,32 +78,32 @@ private fun JogColumn(c: Controller, i: Int, onLoad: () -> Unit, modifier: Modif
         val jogS = minOf(maxWidth, maxHeight - tH - chipsH - 12.dp - (if (showTitle) 40.dp else 0.dp)).coerceAtLeast(70.dp)
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)) {
             if (showTitle) Column(Modifier.fillMaxWidth().pointerInput2 { onLoad() }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(u.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp), maxLines = 1)
+                Text(u.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = F.f13), maxLines = 1)
                 Text(listOf(u.keyText, if (c.showRemain) u.remain else u.time).filter { it.isNotEmpty() }.joinToString("  ·  "), style = T.cap.copy(letterSpacing = 0.2.sp, color = col), maxLines = 1)
             }
             Jog(c, i, Modifier.size(jogS))
             Row(Modifier.fillMaxWidth().height(tH), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // skip to start
-                PressBox(Modifier.width(36.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { d.toStart() }, label = "Back to start") { p ->
-                    Box(Modifier.fillMaxSize().background(if (p) C.s4 else C.s3).border(1.dp, C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { SkipStartIcon(col) }
+                PressBox(Modifier.width(36.dp).fillMaxHeight().clip(RoundedCornerShape(D.r12)), onDown = { d.toStart() }, label = "Back to start") { p ->
+                    Box(Modifier.fillMaxSize().background(if (p) C.s4 else C.s3).border(1.dp, C.line, RoundedCornerShape(D.r12)), contentAlignment = Alignment.Center) { SkipStartIcon(col) }
                 }
                 // CUE (momentary)
-                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.cuePad(i) }, onUp = { d.cueUp() }, label = "Cue") { p ->
-                    Box(Modifier.fillMaxSize().background(if (p) col.copy(alpha = .3f) else C.s3).border(1.dp, if (p) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                        Text("CUE", style = T.tab.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = if (p) col else C.cueText))
+                PressBox(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(D.r12)), onDown = { c.cuePad(i) }, onUp = { d.cueUp() }, label = "Cue") { p ->
+                    Box(Modifier.fillMaxSize().background(if (p) col.copy(alpha = .3f) else C.s3).border(1.dp, if (p) col else C.line, RoundedCornerShape(D.r12)), contentAlignment = Alignment.Center) {
+                        Text(stringResource(R.string.cue), style = T.tab.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = if (p) col else C.cueText))
                     }
                 }
-                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(12.dp)), onDown = { c.togglePlayPad(i) }, label = if (u.playing) "Pause" else "Play") { p ->
-                    Box(Modifier.fillMaxSize().background(if (u.playing) col else if (p) C.s4 else C.s3).border(1.dp, if (u.playing) col else C.line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                PressBox(Modifier.weight(1.25f).fillMaxHeight().clip(RoundedCornerShape(D.r12)), onDown = { c.togglePlayPad(i) }, label = if (u.playing) "Pause" else "Play") { p ->
+                    Box(Modifier.fillMaxSize().background(if (u.playing) col else if (p) C.s4 else C.s3).border(1.dp, if (u.playing) col else C.line, RoundedCornerShape(D.r12)), contentAlignment = Alignment.Center) {
                         PlayIcon(u.playing, if (u.playing) Color.Black else col)
                     }
                 }
-                PillButton("SYNC", u.synced, C.fx, Modifier.weight(1f).fillMaxHeight(), solid = true) { c.toggleSync(i) }
+                PillButton(stringResource(R.string.sync), u.synced, C.fx, Modifier.weight(1f).fillMaxHeight(), solid = true) { c.toggleSync(i) }
             }
             Row(Modifier.fillMaxWidth().height(chipsH), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Chip("PITCH LOCK", u.keyLock, col, Modifier.weight(1.7f).fillMaxHeight()) { c.toggleKeyLock(i) }
-                Chip("SLIP", u.slip, col, Modifier.weight(0.85f).fillMaxHeight()) { c.toggleSlip(i) }
-                Chip("SNAP", c.quantize, col, Modifier.weight(1f).fillMaxHeight()) { c.toggleQuantize() }
+                Chip(stringResource(R.string.pitch_lock), u.keyLock, col, Modifier.weight(1.7f).fillMaxHeight()) { c.toggleKeyLock(i) }
+                Chip(stringResource(R.string.slip), u.slip, col, Modifier.weight(0.85f).fillMaxHeight()) { c.toggleSlip(i) }
+                Chip(stringResource(R.string.snap), c.quantize, col, Modifier.weight(1f).fillMaxHeight()) { c.toggleQuantize() }
             }
         }
     }
@@ -140,12 +142,12 @@ private fun PadColumn(c: Controller, i: Int, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (v.pads) {
             // mode selector
-            Row(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(10.dp)).background(C.s2).padding(2.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(D.r10)).background(C.s2).padding(2.dp), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                 MODES.forEachIndexed { k, name ->
                     val on = u.padMode == k
-                    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(if (on) C.s4 else Color.Transparent)
+                    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(D.r8)).background(if (on) C.s4 else Color.Transparent)
                         .pointerInput2 { u.padMode = k }, contentAlignment = Alignment.Center) {
-                        Text(name, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.sp, color = if (on) col else C.mu, fontWeight = FontWeight.Bold), maxLines = 1, softWrap = false)
+                        Text(name, style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.sp, color = if (on) col else C.mu, fontWeight = FontWeight.Bold), maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -185,7 +187,7 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         5 -> { color = C.cue[6]; val s = k - 4; label = if (s > 0) "+$s" else if (s < 0) "−${-s}" else "0"; sub = "KEY"; lit = u.keyShift == s }
     }
     PressBox(
-        modifier.clip(RoundedCornerShape(12.dp)),
+        modifier.clip(RoundedCornerShape(D.r12)),
         onDown = {
             when (mode) {
                 0 -> c.hotCuePad(i, k)
@@ -200,15 +202,15 @@ private fun Pad(c: Controller, i: Int, k: Int, modifier: Modifier) {
         onLong = when (mode) { 0 -> ({ d.hotCueClear(k) }); 4 -> ({ c.sampleEdit = k }); else -> null },
         label = listOf("Hot cue", "Loop", "Roll", "Beat jump", "Sample", "Key shift").getOrElse(mode) { "Pad" } + " " + (k + 1),
     ) { p ->
-        val base = if (empty) Color(0xFF0F121B) else color.copy(alpha = if (lit) 0.95f else 0.17f)
+        val base = if (empty) C.padEmpty else color.copy(alpha = if (lit) 0.95f else 0.17f)
         Box(
             Modifier.fillMaxSize()
                 .background(if (p) color.copy(alpha = 0.85f) else base)
-                .border(1.dp, if (empty) Color(0x22FFFFFF) else color.copy(alpha = if (p || lit) 1f else 0.5f), RoundedCornerShape(12.dp))
+                .border(1.dp, if (empty) C.gridLine else color.copy(alpha = if (p || lit) 1f else 0.5f), RoundedCornerShape(D.r12))
         ) {
             val tc = if (p || lit) Color.Black else if (empty) C.dim else color
             Text(label, Modifier.align(Alignment.Center), style = T.tab.copy(color = tc, fontWeight = FontWeight.Bold, fontSize = if (label.length > 2) 10.sp else 17.sp, letterSpacing = 0.sp), textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
-            if (sub.isNotEmpty()) Text(sub, Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp), style = T.cap.copy(fontSize = 6.5.sp, letterSpacing = 0.3.sp, color = tc.copy(alpha = 0.7f)), maxLines = 1, softWrap = false)
+            if (sub.isNotEmpty()) Text(sub, Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp), style = T.cap.copy(fontSize = F.f6_5, letterSpacing = 0.3.sp, color = tc.copy(alpha = 0.7f)), maxLines = 1, softWrap = false)
         }
     }
 }
@@ -218,7 +220,7 @@ private fun PitchColumn(c: Controller, i: Int, modifier: Modifier) {
     val u = c.ui[i]
     val col = C.deck(i)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text("TEMPO", style = T.cap.copy(fontSize = 7.5.sp, letterSpacing = 0.5.sp))
+        Text(stringResource(R.string.tempo), style = T.cap.copy(fontSize = F.f7_5, letterSpacing = 0.5.sp))
         NudgeBtn("+", col) { down -> c.engine.decks[i].bend = if (down) 0.04f else 0f }
         VFader((u.tempo + 1f) / 2f, { c.pitch(i, it * 2f - 1f) }, col, Modifier.weight(1f).fillMaxWidth(), default = 0.5f, ticks = true, thumbH = 30.dp, label = "Tempo deck ${c.deckName(i)}")
         NudgeBtn("−", col) { down -> c.engine.decks[i].bend = if (down) -0.04f else 0f }
@@ -229,9 +231,9 @@ private fun PitchColumn(c: Controller, i: Int, modifier: Modifier) {
 /** Hold-to-nudge pitch bend (like pushing the platter edge). */
 @Composable
 private fun NudgeBtn(label: String, color: Color, onChange: (Boolean) -> Unit) {
-    PressBox(Modifier.fillMaxWidth().height(30.dp).clip(RoundedCornerShape(9.dp)), onDown = { onChange(true) }, onUp = { onChange(false) }) { p ->
-        Box(Modifier.fillMaxSize().background(if (p) color.copy(alpha = .35f) else C.s3).border(1.dp, if (p) color else C.line, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-            Text(label, style = T.tab.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (p) color else C.mu))
+    PressBox(Modifier.fillMaxWidth().height(30.dp).clip(RoundedCornerShape(D.r9)), onDown = { onChange(true) }, onUp = { onChange(false) }) { p ->
+        Box(Modifier.fillMaxSize().background(if (p) color.copy(alpha = .35f) else C.s3).border(1.dp, if (p) color else C.line, RoundedCornerShape(D.r9)), contentAlignment = Alignment.Center) {
+            Text(label, style = T.tab.copy(fontSize = F.f16, fontWeight = FontWeight.Bold, color = if (p) color else C.mu))
         }
     }
 }

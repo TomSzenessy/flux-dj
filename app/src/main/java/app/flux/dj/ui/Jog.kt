@@ -97,7 +97,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             // rim track (progress)
             val rimW = max(3f, R * 0.05f)
             val rr = R - rimW
-            drawArc(Color(0x14FFFFFF), 0f, 360f, false, Offset(ctr.x - rr, ctr.y - rr), androidx.compose.ui.geometry.Size(rr * 2, rr * 2), style = Stroke(rimW))
+            drawArc(C.jogRimTrack, 0f, 360f, false, Offset(ctr.x - rr, ctr.y - rr), androidx.compose.ui.geometry.Size(rr * 2, rr * 2), style = Stroke(rimW))
             if (t != null) {
                 drawArc(col, -90f, 360f * frac, false, Offset(ctr.x - rr, ctr.y - rr), androidx.compose.ui.geometry.Size(rr * 2, rr * 2), style = Stroke(rimW, cap = StrokeCap.Round))
                 for (k in 0 until 8) {
@@ -115,7 +115,7 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
                 val a = rot + k * 2 * PI / 48
                 val major = k % 12 == 0
                 val r1 = pr * 0.93f; val r2 = pr * (if (major) 0.80f else 0.87f)
-                drawLine(if (major) col else Color(0x33FFFFFF), Offset(ctr.x + cos(a).toFloat() * r1, ctr.y + sin(a).toFloat() * r1),
+                drawLine(if (major) col else C.tick, Offset(ctr.x + cos(a).toFloat() * r1, ctr.y + sin(a).toFloat() * r1),
                     Offset(ctr.x + cos(a).toFloat() * r2, ctr.y + sin(a).toFloat() * r2), if (major) 3f else 1.5f, StrokeCap.Round)
             }
             // needle marker
@@ -127,9 +127,9 @@ fun Jog(c: Controller, i: Int, modifier: Modifier = Modifier) {
             if (d.scratching) drawCircle(col.copy(alpha = 0.15f), pr, ctr)
         }
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(u.bpm, style = T.num.copy(fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
-            Text(u.pct, style = T.cap.copy(fontSize = 9.sp, letterSpacing = 0.sp, color = if (u.synced) C.fx else C.mu))
-            if (u.origBpm.isNotEmpty()) Text("ORIG ${u.origBpm}", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.4.sp, color = C.dim))
+            Text(u.bpm, style = T.num.copy(fontSize = F.f20, fontWeight = FontWeight.SemiBold))
+            Text(u.pct, style = T.cap.copy(fontSize = F.f9, letterSpacing = 0.sp, color = if (u.synced) C.fx else C.mu))
+            if (u.origBpm.isNotEmpty()) Text("ORIG ${u.origBpm}", style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.4.sp, color = C.dim))
         }
     }
 }

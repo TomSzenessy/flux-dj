@@ -48,7 +48,10 @@ sheet. The design is a dark instrument panel, not a generic Material app.
 - **Type:** system sans for labels and controls; `FontFamily.Monospace` for BPM,
   time, key and gain so figures stay aligned; deck labels in small caps; no
   display face.
-- **Shape:** 12 dp panels, 8 dp chips, 4 dp track backgrounds; 1 dp hairlines.
+- **Shape:** radii and font sizes are the `D`/`F` tokens in `Theme.kt`
+  (panels 14–16 dp, chips 8–10 dp, hairlines 1 dp); no widget owns a raw radius.
+- **Copy:** user-facing labels live in `res/values/strings.xml`; dynamic strings
+  (track titles, counts, formatted times) are built in code.
 - **Spacing:** 4/8/12/16 dp grid; the mixer column is fixed-width so the
   waveform width changes with the panel layout, not with content.
 - **Motion:** 120–180 ms ease-out for sheet and panel changes; no motion on

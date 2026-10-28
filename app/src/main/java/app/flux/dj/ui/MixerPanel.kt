@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.flux.dj.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -28,7 +30,7 @@ fun Modifier.pointerInput2(onTap: () -> Unit): Modifier = this.pointerInput(Unit
 @Composable
 fun MixerPanel(c: Controller, modifier: Modifier = Modifier) {
     val v = c.view
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(D.r16)
     Column(
         modifier.clip(shape).background(Brush.verticalGradient(listOf(C.s1, C.deep))).border(1.dp, C.line, shape).padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -75,7 +77,7 @@ private fun Strip(c: Controller, i: Int, modifier: Modifier) {
                 if (i == 1) meter()
             }
         }
-        PillButton("CUE", s.cue, C.fx, Modifier.fillMaxWidth().height(28.dp), solid = true) { c.toggleCue(i) }
+        PillButton(stringResource(R.string.cue), s.cue, C.fx, Modifier.fillMaxWidth().height(28.dp), solid = true) { c.toggleCue(i) }
     }
 }
 
@@ -83,14 +85,14 @@ private fun Strip(c: Controller, i: Int, modifier: Modifier) {
 @Composable
 private fun PhaseMeter(c: Controller, modifier: Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("PHASE", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.6.sp))
+        Text(stringResource(R.string.phase), style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.6.sp))
         androidx.compose.foundation.Canvas(Modifier.weight(1f).fillMaxHeight().padding(vertical = 4.dp)) {
             c.tick.longValue
             val diff = c.phaseDiff
             val w = size.width; val h = size.height
             drawRoundRect(C.s2, cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2))
-            for (k in 1..3) drawLine(Color(0x22FFFFFF), androidx.compose.ui.geometry.Offset(w * k / 4, 2f), androidx.compose.ui.geometry.Offset(w * k / 4, h - 2f), 1f)
-            drawLine(Color(0x66FFFFFF), androidx.compose.ui.geometry.Offset(w / 2, 0f), androidx.compose.ui.geometry.Offset(w / 2, h), 1.5f)
+            for (k in 1..3) drawLine(C.gridLine, androidx.compose.ui.geometry.Offset(w * k / 4, 2f), androidx.compose.ui.geometry.Offset(w * k / 4, h - 2f), 1f)
+            drawLine(C.gridStrong, androidx.compose.ui.geometry.Offset(w / 2, 0f), androidx.compose.ui.geometry.Offset(w / 2, h), 1.5f)
             if (diff != null) {
                 val x = w / 2 + diff * w
                 val good = kotlin.math.abs(diff) < 0.03f
@@ -100,6 +102,6 @@ private fun PhaseMeter(c: Controller, modifier: Modifier) {
             }
         }
         val d = c.phaseDiff
-        Text(if (d == null) "—" else if (kotlin.math.abs(d) < 0.03f) "LOCKED" else String.format("%+.0f%%", d * 100), style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.3.sp, color = if (d != null && kotlin.math.abs(d) < 0.03f) C.ok else C.mu), modifier = Modifier.width(44.dp))
+        Text(if (d == null) "—" else if (kotlin.math.abs(d) < 0.03f) "LOCKED" else String.format("%+.0f%%", d * 100), style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.3.sp, color = if (d != null && kotlin.math.abs(d) < 0.03f) C.ok else C.mu), modifier = Modifier.width(44.dp))
     }
 }

@@ -21,6 +21,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.flux.dj.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -76,8 +78,8 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
         }
     }
     Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(C.s1)
-            .border(if (hover) 2.dp else 1.dp, if (hover) col else C.line, RoundedCornerShape(12.dp))
+        modifier.clip(RoundedCornerShape(D.r12)).background(C.s1)
+            .border(if (hover) 2.dp else 1.dp, if (hover) col else C.line, RoundedCornerShape(D.r12))
             .dragAndDropTarget(shouldStartDragAndDrop = { e -> e.mimeTypes().any { it.startsWith("audio/") || it == "text/plain" || it == "application/octet-stream" || it == "text/uri-list" } }, target = dropTarget)
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -89,76 +91,76 @@ fun WaveStrip(c: Controller, i: Int, showOverview: Boolean, onOpenLibrary: () ->
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
-                        Modifier.size(22.dp, 20.dp).clip(RoundedCornerShape(6.dp)).background(col),
+                        Modifier.size(22.dp, 20.dp).clip(RoundedCornerShape(D.r6)).background(col),
                         contentAlignment = Alignment.Center
                     ) { Text(if (i == 0) "A" else "B", style = T.tab.copy(color = Color.Black, fontWeight = FontWeight.ExtraBold)) }
                     // LOAD / eject button
                     Box(
-                        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(8.dp))
+                        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(D.r8)).background(C.scrimSoft).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(D.r8))
                             .semantics { contentDescription = "Load a track on deck ${if (i == 0) "A" else "B"}" }
                             .pointerInput2 { onOpenLibrary() },
                         contentAlignment = Alignment.Center
                     ) { EjectIcon(col) }
                     if (u.loaded) Box(
-                        Modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (u.gridEdit) C.fx else C.scrimSoft)
-                            .border(1.dp, if (u.gridEdit) C.fx else C.line, RoundedCornerShape(8.dp))
+                        Modifier.height(48.dp).clip(RoundedCornerShape(D.r8)).background(if (u.gridEdit) C.fx else C.scrimSoft)
+                            .border(1.dp, if (u.gridEdit) C.fx else C.line, RoundedCornerShape(D.r8))
                             .pointerInput2 { if (u.gridEdit) c.gridDone(i) else c.gridOpen(i) }.padding(horizontal = 8.dp),
                         contentAlignment = Alignment.Center
-                    ) { Text("GRID", style = T.cap.copy(fontSize = 9.sp, letterSpacing = 0.8.sp, color = if (u.gridEdit) Color.Black else C.mu, fontWeight = FontWeight.Bold)) }
+                    ) { Text(stringResource(R.string.grid), style = T.cap.copy(fontSize = F.f9, letterSpacing = 0.8.sp, color = if (u.gridEdit) Color.Black else C.mu, fontWeight = FontWeight.Bold)) }
                     if (u.loaded && u.analysisSource.isNotEmpty()) {
                         val badge = when (u.analysisSource) { "rekordbox" -> "RB"; "manual" -> "✎ GRID"; else -> "LOCAL" }
                         val bc = if (u.analysisSource == "flux") C.mu else C.fx
                         Box(
-                            Modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrimSoft)
-                                .border(1.dp, bc.copy(alpha = .5f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp),
+                            Modifier.height(48.dp).clip(RoundedCornerShape(D.r8)).background(C.scrimSoft)
+                                .border(1.dp, bc.copy(alpha = .5f), RoundedCornerShape(D.r8)).padding(horizontal = 7.dp),
                             contentAlignment = Alignment.Center
-                        ) { Text(badge, style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.5.sp, color = bc, fontWeight = FontWeight.Bold)) }
+                        ) { Text(badge, style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.5.sp, color = bc, fontWeight = FontWeight.Bold)) }
                     }
                     Column(Modifier
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(D.r6))
                         .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(); val up = waitForUpOrCancellation(); if (up != null) onOpenLibrary() } }
                         .background(C.scrimFaint).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                        Text(u.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp), maxLines = 1)
+                        Text(u.title, style = T.tab.copy(fontWeight = FontWeight.SemiBold, fontSize = F.f12), maxLines = 1)
                         val sub = buildString {
                             if (u.keyText.isNotEmpty()) append(u.keyText)
                             if (u.origBpm.isNotEmpty()) { if (isNotEmpty()) append(" · "); append("${u.origBpm} BPM") }
                             if (u.analysing) append("  analysing…")
                         }
-                        if (sub.isNotEmpty() || u.artist.isNotEmpty()) Text(if (sub.isNotEmpty()) sub else u.artist, style = T.cap.copy(fontSize = 9.sp, letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
+                        if (sub.isNotEmpty() || u.artist.isNotEmpty()) Text(if (sub.isNotEmpty()) sub else u.artist, style = T.cap.copy(fontSize = F.f9, letterSpacing = 0.3.sp, color = C.mu), maxLines = 1)
                     }
                     if (u.match.isNotEmpty() && u.loaded) {
-                        Text("● " + u.match, style = T.cap.copy(fontSize = 9.sp, color = if (u.matchGood) C.ok else C.fx))
+                        Text("● " + u.match, style = T.cap.copy(fontSize = F.f9, color = if (u.matchGood) C.ok else C.fx))
                     }
                 }
                 Row(Modifier.align(Alignment.TopEnd).padding(end = 10.dp, top = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (u.hasBpm && u.loaded) Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(top = 3.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            for (b in 1..4) Box(Modifier.size(9.dp, 9.dp).clip(RoundedCornerShape(2.dp)).background(if (b == u.beat) (if (b == 1) col else C.tx) else C.s3))
+                            for (b in 1..4) Box(Modifier.size(9.dp, 9.dp).clip(RoundedCornerShape(D.r2)).background(if (b == u.beat) (if (b == 1) col else C.tx) else C.s3))
                         }
                         Spacer(Modifier.height(3.dp))
-                        Text(u.barText, style = T.num.copy(fontSize = 10.sp, color = if (u.phraseSoon) C.fx else C.mu))
+                        Text(u.barText, style = T.num.copy(fontSize = F.f10, color = if (u.phraseSoon) C.fx else C.mu))
                     }
                     Column(horizontalAlignment = Alignment.End, modifier = Modifier.pointerInput2 { c.showRemain = !c.showRemain }) {
-                        Text(if (c.showRemain) u.remain else u.time, style = T.num.copy(fontSize = 19.sp, color = col, fontWeight = FontWeight.SemiBold))
-                        Text(if (c.showRemain) u.time else u.remain, style = T.cap.copy(fontSize = 10.sp, letterSpacing = 0.sp))
+                        Text(if (c.showRemain) u.remain else u.time, style = T.num.copy(fontSize = F.f19, color = col, fontWeight = FontWeight.SemiBold))
+                        Text(if (c.showRemain) u.time else u.remain, style = T.cap.copy(fontSize = F.f10, letterSpacing = 0.sp))
                     }
                 }
-                if (u.loading >= 0f && !u.loaded) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(8.dp)).background(Color(0xCC000000)).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                if (u.loading >= 0f && !u.loaded) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(D.r8)).background(C.loadingScrim).padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Text("Loading ${(u.loading * 100).toInt()}%", style = T.tab)
                 }
                 // already playable: just a hairline while the rest of the file decodes
                 if (u.loading >= 0f && u.loaded) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(u.loading.coerceIn(0f, 1f)).height(2.dp).background(col.copy(alpha = .8f)))
                 if (!u.loaded && u.loading < 0f) Box(
-                    Modifier.align(Alignment.Center).clip(RoundedCornerShape(18.dp)).background(col.copy(alpha = .14f)).border(1.dp, col, RoundedCornerShape(18.dp)).pointerInput2 { onOpenLibrary() }.padding(horizontal = 18.dp, vertical = 9.dp)
-                ) { Text("＋  Load a track  ·  or drop a file here", style = T.tab.copy(color = col, fontWeight = FontWeight.SemiBold)) }
+                    Modifier.align(Alignment.Center).clip(RoundedCornerShape(D.r18)).background(col.copy(alpha = .14f)).border(1.dp, col, RoundedCornerShape(D.r18)).pointerInput2 { onOpenLibrary() }.padding(horizontal = 18.dp, vertical = 9.dp)
+                ) { Text(stringResource(R.string.load_a_track_or_drop_a_file_here), style = T.tab.copy(color = col, fontWeight = FontWeight.SemiBold)) }
                 if (u.gridEdit) GridBar(c, i, Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 5.dp, end = 150.dp))
                 // zoom
                 Row(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (c.zoomSec < 10f) String.format("%.1fs", c.zoomSec) else "${c.zoomSec.roundToInt()}s", style = T.cap.copy(fontSize = 9.sp, letterSpacing = 0.sp))
+                    Text(if (c.zoomSec < 10f) String.format("%.1fs", c.zoomSec) else "${c.zoomSec.roundToInt()}s", style = T.cap.copy(fontSize = F.f9, letterSpacing = 0.sp))
                     ZoomBtn("−") { c.zoomSec = (c.zoomSec * 2f).coerceAtMost(48f) }
                     ZoomBtn("+") { c.zoomSec = (c.zoomSec / 2f).coerceAtLeast(1f) }
                 }
-                if (hover) Box(Modifier.fillMaxSize().background(col.copy(alpha = .12f)), contentAlignment = Alignment.Center) { Text("Drop to load on deck ${if (i == 0) "A" else "B"}", style = T.tab.copy(color = col, fontWeight = FontWeight.Bold, fontSize = 15.sp)) }
+                if (hover) Box(Modifier.fillMaxSize().background(col.copy(alpha = .12f)), contentAlignment = Alignment.Center) { Text("Drop to load on deck ${if (i == 0) "A" else "B"}", style = T.tab.copy(color = col, fontWeight = FontWeight.Bold, fontSize = F.f15)) }
             }
             if (showOverview) Overview(c, i, Modifier.fillMaxWidth().height(22.dp))
         }
@@ -297,7 +299,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         }
         val editGrid = u.gridEdit && t.bpm > 0
         // past dimming
-        drawRect(Color(0x99090A0F), Offset.Zero, Size(w / 2, h))
+        drawRect(C.pastDim, Offset.Zero, Size(w / 2, h))
         // grid edit: draw the grid on top of the waveform so it can be lined up with the kicks
         if (editGrid) {
             val k0 = ceil(t.beatIndex(fStart)).toInt()
@@ -331,7 +333,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
         // main cue
         run {
             val x = ((d.cue - fStart) / fpp).toFloat()
-            if (x in 0f..w) { drawLine(Color(0xFFFF8A3D), Offset(x, 0f), Offset(x, h), 2f) }
+            if (x in 0f..w) { drawLine(C.mainCue, Offset(x, 0f), Offset(x, h), 2f) }
         }
         // playhead
         drawLine(col.copy(alpha = 0.25f), Offset(w / 2, 0f), Offset(w / 2, h), 8f)
@@ -342,7 +344,7 @@ private fun MainWave(c: Controller, i: Int, modifier: Modifier) {
             val pulse = (0.5f + 0.5f * sin(System.nanoTime() / 1.2e8).toFloat())
             drawRoundRect(C.bad.copy(alpha = 0.25f + 0.55f * pulse), Offset(1f, 1f), Size(w - 2f, h - 2f), CornerRadius(12.dp.toPx()), style = Stroke(2.dp.toPx()))
         }
-        if (d.scratching) drawRect(Color(0x11FFFFFF))
+        if (d.scratching) drawRect(C.scratchFlash)
     }
 }
 
@@ -433,7 +435,7 @@ private fun Overview(c: Controller, i: Int, modifier: Modifier) {
             val xx = x * colW + colW / 2
             pts[x * 4] = xx; pts[x * 4 + 1] = h / 2 - hh; pts[x * 4 + 2] = xx; pts[x * 4 + 3] = h / 2 + hh
         }
-        fillBand(pts, cols, Color(0xFF3B4158), path)
+        fillBand(pts, cols, C.overviewBand, path)
         // played portion tint
         clipPlayed(this, pts, cols, px, col, path)
         for (k in 0 until 8) {
@@ -464,10 +466,10 @@ private fun DrawScope.fillBand(pts: FloatArray, count: Int, color: Color, path: 
 
 @Composable
 private fun ZoomBtn(label: String, onClick: () -> Unit) {
-    Box(Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(8.dp)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(8.dp))
+    Box(Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(D.r8)).background(C.scrim).border(1.dp, C.line, RoundedCornerShape(D.r8))
         .semantics { contentDescription = if (label == "+") "Zoom in" else "Zoom out" }
         .pointerInput2(onClick), contentAlignment = Alignment.Center) {
-        Text(label, style = T.tab.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold))
+        Text(label, style = T.tab.copy(fontSize = F.f15, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -484,19 +486,19 @@ private fun EjectIcon(color: Color) {
 private fun GridBar(c: Controller, i: Int, modifier: Modifier) {
     val u = c.ui[i]
     Row(
-        modifier.horizontalScroll(rememberScrollState()).clip(RoundedCornerShape(10.dp)).background(Color(0xE6000000)).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(10.dp)).padding(4.dp),
+        modifier.horizontalScroll(rememberScrollState()).clip(RoundedCornerShape(D.r10)).background(C.toolbarScrim).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(D.r10)).padding(4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         GridBtn("MOVE", accent = u.gridMode == 0) { u.gridMode = 0 }
         GridBtn("STRETCH", accent = u.gridMode == 1) { u.gridMode = 1 }
-        Text(if (u.gridMode == 0) "drag = slide grid" else "pin 1 early · go later · drag", style = T.cap.copy(fontSize = 8.sp, letterSpacing = 0.3.sp, color = C.fx), modifier = Modifier.padding(horizontal = 4.dp))
+        Text(if (u.gridMode == 0) "drag = slide grid" else "pin 1 early · go later · drag", style = T.cap.copy(fontSize = F.f8, letterSpacing = 0.3.sp, color = C.fx), modifier = Modifier.padding(horizontal = 4.dp))
         GridBtn("◀") { c.gridShiftMs(i, -5f) }
         GridBtn("▶") { c.gridShiftMs(i, 5f) }
         GridBtn("SET 1 HERE", accent = true) { c.gridSetDownbeat(i) }
         Spacer(Modifier.width(4.dp))
         GridBtn("−0.1") { c.gridBpmDelta(i, -0.1f) }
         GridBtn("−.01") { c.gridBpmDelta(i, -0.01f) }
-        Text(u.gridBpm, style = T.num.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = Modifier.padding(horizontal = 4.dp))
+        Text(u.gridBpm, style = T.num.copy(fontSize = F.f13, fontWeight = FontWeight.Bold), modifier = Modifier.padding(horizontal = 4.dp))
         GridBtn("+.01") { c.gridBpmDelta(i, 0.01f) }
         GridBtn("+0.1") { c.gridBpmDelta(i, 0.1f) }
         GridBtn("½") { c.gridScale(i, 0.5f) }
@@ -511,11 +513,11 @@ private fun GridBar(c: Controller, i: Int, modifier: Modifier) {
 
 @Composable
 private fun GridBtn(label: String, accent: Boolean = false, onClick: () -> Unit) {
-    PressBox(Modifier.height(48.dp).clip(RoundedCornerShape(7.dp)), onUp = onClick, pressOnDown = false) { p ->
+    PressBox(Modifier.height(48.dp).clip(RoundedCornerShape(D.r7)), onUp = onClick, pressOnDown = false) { p ->
         Box(
             Modifier.fillMaxHeight().background(if (p) C.fx.copy(alpha = .5f) else if (accent) C.fx.copy(alpha = .2f) else C.s3)
-                .border(1.dp, if (accent) C.fx else C.line, RoundedCornerShape(7.dp)).padding(horizontal = 9.dp),
+                .border(1.dp, if (accent) C.fx else C.line, RoundedCornerShape(D.r7)).padding(horizontal = 9.dp),
             contentAlignment = Alignment.Center
-        ) { Text(label, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (accent) C.fx else C.tx), maxLines = 1, softWrap = false) }
+        ) { Text(label, style = T.tab.copy(fontSize = F.f11, fontWeight = FontWeight.Bold, color = if (accent) C.fx else C.tx), maxLines = 1, softWrap = false) }
     }
 }

@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import app.flux.dj.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -54,17 +56,17 @@ fun AlignScreen(c: Controller) {
     Box(Modifier.fillMaxSize().background(C.scrimStrong).pointerInput2 { c.cancelAlign() }, contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 900.dp).fillMaxWidth(0.9f).fillMaxHeight(0.92f)
-                .verticalScroll(rememberScrollState()).clip(RoundedCornerShape(24.dp)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(24.dp)).pointerInput2 { }.padding(24.dp),
+                .verticalScroll(rememberScrollState()).clip(RoundedCornerShape(D.r24)).background(C.s1).border(1.dp, C.fx.copy(alpha = .5f), RoundedCornerShape(D.r24)).pointerInput2 { }.padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Timing & alignment", style = T.tab.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = C.fx))
-            Text("The room, the headphones and the picture are all outputs with a delay. FLUX can measure them with the mic and hold everything back to match — or you can nudge each one by ear.", style = T.tab.copy(color = C.mu, fontSize = 13.sp))
+            Text(stringResource(R.string.timing_alignment), style = T.tab.copy(fontSize = F.f22, fontWeight = FontWeight.Bold, color = C.fx))
+            Text(stringResource(R.string.the_room_the_headphones_and_the_picture_are_all_outputs_with_a_delay_flux_can_measure_them_with_the_mic_and_hold_everything_back_to_match_or_you_can_nudge_each_one_by_ear), style = T.tab.copy(color = C.mu, fontSize = F.f13))
 
             AutoAlignCard(c)
 
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (c.outMode != OutMode.SINGLE) Chip("Headphones ↔ room", lane == 0, C.fx, Modifier.height(48.dp)) { lane = 0 }
-                Chip("Picture ↔ sound", showPicture && c.outMode == OutMode.SINGLE || lane == 1, C.fx, Modifier.height(48.dp)) { lane = 1 }
+                if (c.outMode != OutMode.SINGLE) Chip(stringResource(R.string.headphones_room), lane == 0, C.fx, Modifier.height(48.dp)) { lane = 0 }
+                Chip(stringResource(R.string.picture_sound), showPicture && c.outMode == OutMode.SINGLE || lane == 1, C.fx, Modifier.height(48.dp)) { lane = 1 }
             }
             if (showPicture) PictureLane(c, Modifier.fillMaxWidth().height(150.dp)) else CueLanes(c, Modifier.fillMaxWidth().height(150.dp))
             val value = if (showPicture) c.visualTrimMs else c.offsetMs
@@ -80,14 +82,14 @@ fun AlignScreen(c: Controller) {
                         value > 0 -> "Headphones were behind → room waits $value ms"
                         else -> "Headphones were ahead → cue waits ${-value} ms"
                     },
-                    style = T.num.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
+                    style = T.num.copy(fontSize = F.f14, fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f)
                 )
                 for (d in listOf(-10, -1, 1, 10)) Chip(if (d > 0) "+$d" else "$d", false, C.fx, Modifier.height(48.dp).width(52.dp)) { nudge(d) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Cancel", false, C.mu, Modifier.weight(1f).height(46.dp)) { c.cancelAlign() }
-                PillButton("Reset", false, C.mu, Modifier.weight(1f).height(46.dp)) { if (showPicture) c.setVisualTrim(0) else c.setOffset(0) }
-                PillButton("Done", true, C.fx, Modifier.weight(2f).height(46.dp), solid = true) { c.stopAlign() }
+                PillButton(stringResource(R.string.cancel), false, C.mu, Modifier.weight(1f).height(46.dp)) { c.cancelAlign() }
+                PillButton(stringResource(R.string.reset), false, C.mu, Modifier.weight(1f).height(46.dp)) { if (showPicture) c.setVisualTrim(0) else c.setOffset(0) }
+                PillButton(stringResource(R.string.done), true, C.fx, Modifier.weight(2f).height(46.dp), solid = true) { c.stopAlign() }
             }
         }
     }
@@ -96,36 +98,36 @@ fun AlignScreen(c: Controller) {
 @Composable
 private fun AutoAlignCard(c: Controller) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.s2).border(1.dp, C.ok.copy(alpha = .35f), RoundedCornerShape(14.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(D.r14)).background(C.s2).border(1.dp, C.ok.copy(alpha = .35f), RoundedCornerShape(D.r14)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("AUTOMATIC · MICROPHONE", style = T.cap.copy(color = C.ok, fontSize = 9.sp, letterSpacing = 0.8.sp), modifier = Modifier.weight(1f))
-            if (c.autoStep == 5) Chip("Redo", false, C.ok, Modifier.height(48.dp)) { c.beginAutoAlign() }
+            Text(stringResource(R.string.automatic_microphone), style = T.cap.copy(color = C.ok, fontSize = F.f9, letterSpacing = 0.8.sp), modifier = Modifier.weight(1f))
+            if (c.autoStep == 5) Chip(stringResource(R.string.redo), false, C.ok, Modifier.height(48.dp)) { c.beginAutoAlign() }
         }
         when (c.autoStep) {
             0 -> {
-                Text("Put the mic next to the room output, then next to the headphones. FLUX measures each delay, aligns them, and holds the picture/grid back to the latest one. Close the sheet to keep the current timing.", style = T.tab.copy(color = C.mu, fontSize = 12.sp))
-                PillButton("⚡  Auto-align everything", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.beginAutoAlign() }
-                Chip("Measure current output only", false, C.mu, Modifier.height(48.dp)) { c.measureMaster() }
+                Text(stringResource(R.string.put_the_mic_next_to_the_room_output_then_next_to_the_headphones_flux_measures_each_delay_aligns_them_and_holds_the_picture_grid_back_to_the_latest_one_close_the_sheet_to_keep_the_current_timing), style = T.tab.copy(color = C.mu, fontSize = F.f12))
+                PillButton(stringResource(R.string.auto_align_everything), true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.beginAutoAlign() }
+                Chip(stringResource(R.string.measure_current_output_only), false, C.mu, Modifier.height(48.dp)) { c.measureMaster() }
             }
             1 -> {
-                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
-                PillButton("Measure speaker", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureMaster() }
-                if (!c.micGranted) Text("Microphone access will be requested.", style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = 10.sp, fontWeight = FontWeight.Normal))
+                Text(c.autoMsg, style = T.tab.copy(fontSize = F.f12))
+                PillButton(stringResource(R.string.measure_speaker), true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureMaster() }
+                if (!c.micGranted) Text(stringResource(R.string.microphone_access_will_be_requested), style = T.cap.copy(letterSpacing = 0.1.sp, fontSize = F.f10, fontWeight = FontWeight.Normal))
             }
             2, 4 -> {
-                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
-                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.s4)) {
+                Text(c.autoMsg, style = T.tab.copy(fontSize = F.f12))
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(D.r3)).background(C.s4)) {
                     Box(Modifier.fillMaxWidth(c.autoProgress.coerceIn(0f, 1f)).fillMaxHeight().background(C.ok))
                 }
             }
             3 -> {
-                Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp))
-                PillButton("Measure headphones", true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureCue() }
-                Chip("Use room only", false, C.mu, Modifier.height(48.dp)) { c.finishMasterOnly() }
+                Text(c.autoMsg, style = T.tab.copy(fontSize = F.f12))
+                PillButton(stringResource(R.string.measure_headphones), true, C.ok, Modifier.fillMaxWidth().height(38.dp), solid = true) { c.measureCue() }
+                Chip(stringResource(R.string.use_room_only), false, C.mu, Modifier.height(48.dp)) { c.finishMasterOnly() }
             }
-            5 -> Text(c.autoMsg, style = T.tab.copy(fontSize = 12.sp, color = C.ok))
+            5 -> Text(c.autoMsg, style = T.tab.copy(fontSize = F.f12, color = C.ok))
         }
     }
 }
@@ -170,7 +172,7 @@ private fun Modifier.dragMs(startOf: () -> Int, onMs: (Int) -> Unit): Modifier =
 private fun CueLanes(c: Controller, modifier: Modifier) {
     val masterName = if (c.outMode == OutMode.SPLIT) "Master (right)" else c.routedTo.ifEmpty { "Master" }
     val cueName = if (c.outMode == OutMode.SPLIT) "Cue (left)" else c.routedCue.ifEmpty { "Headphones" }
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
+    Box(modifier.clip(RoundedCornerShape(D.r14)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(D.r14))) {
         Canvas(Modifier.fillMaxSize().dragMs({ c.offsetMs }) { c.setOffset(it.coerceIn(-RANGE_MS, RANGE_MS)) }) {
             c.tick.longValue
             val w = size.width; val h = size.height
@@ -184,13 +186,13 @@ private fun CueLanes(c: Controller, modifier: Modifier) {
         }
         Text(masterName, Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 4.dp), style = T.cap.copy(color = C.a, letterSpacing = 0.4.sp))
         Text(cueName, Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 2.dp), style = T.cap.copy(color = C.b, letterSpacing = 0.4.sp))
-        Text("◀ drag the lower lane ▶", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 2.dp), style = T.cap.copy(color = C.dim))
+        Text(stringResource(R.string.drag_the_lower_lane), Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 2.dp), style = T.cap.copy(color = C.dim))
     }
 }
 
 @Composable
 private fun PictureLane(c: Controller, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(14.dp))) {
+    Box(modifier.clip(RoundedCornerShape(D.r14)).background(C.deep).border(1.dp, C.line, RoundedCornerShape(D.r14))) {
         Canvas(Modifier.fillMaxSize().dragMs({ c.visualTrimMs }) { c.setVisualTrim(it) }) {
             c.tick.longValue
             val w = size.width; val h = size.height
@@ -206,6 +208,6 @@ private fun PictureLane(c: Controller, modifier: Modifier) {
             drawCircle(Color.White.copy(alpha = 0.15f + 0.6f * flash), 14f + 10f * flash, Offset(w / 2, y - 14f))
             drawLine(Color.White.copy(alpha = 0.85f), Offset(w / 2, 0f), Offset(w / 2, h), 2f)
         }
-        Text("◀ drag ▶", Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), style = T.cap.copy(color = C.dim))
+        Text(stringResource(R.string.drag), Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 4.dp), style = T.cap.copy(color = C.dim))
     }
 }

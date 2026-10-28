@@ -91,3 +91,10 @@ The on-device session on the reference Android tablet is the integration oracle.
 AGP 8.13.2, Gradle 8.13 (checksum pinned), Kotlin 2.2.21, Compose BOM
 2025.12.01, `compileSdk`/`targetSdk` 36, `minSdk` 26. The release build is
 minified and signed only when the release environment supplies the keystore.
+
+## UI single sources
+
+`ui/Theme.kt` owns colours (`C`), radii (`D`) and font sizes (`F`); no widget
+carries a raw colour/radius. Static user copy lives in
+`app/src/main/res/values/strings.xml`, with dynamic values (track titles, counts,
+formatted times) built in code. `app_name` is the manifest label.

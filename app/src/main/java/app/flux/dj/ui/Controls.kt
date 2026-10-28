@@ -101,7 +101,7 @@ fun Knob(
             drawCircle(Brush.radialGradient(listOf(C.knobHi, C.knobLo), center = Offset(c.x, c.y - s * .15f), radius = s * .7f), radius = rOut - sw - 1f, center = c)
             drawCircle(C.line, radius = rOut - sw - 1f, center = c, style = Stroke(1f))
             // track
-            drawArc(Color(0x22FFFFFF), 135f, 270f, false, topLeft, sz, style = Stroke(sw, cap = StrokeCap.Round))
+            drawArc(C.gridLine, 135f, 270f, false, topLeft, sz, style = Stroke(sw, cap = StrokeCap.Round))
             val a0 = if (bipolar) 270f else 135f
             val a1 = 135f + 270f * value
             val sweep = a1 - a0
@@ -114,7 +114,7 @@ fun Knob(
                 Offset(c.x + cos(ang).toFloat() * r1 * .88f, c.y + sin(ang).toFloat() * r1 * .88f), strokeWidth = max(2f, s * 0.055f), cap = StrokeCap.Round)
         }
         if (label.isNotEmpty()) {
-            Text(label, Modifier.align(Alignment.Center).offset(y = 0.dp), style = T.cap.copy(fontSize = 7.sp, letterSpacing = 0.sp, color = C.labelDim))
+            Text(label, Modifier.align(Alignment.Center).offset(y = 0.dp), style = T.cap.copy(fontSize = F.f7, letterSpacing = 0.sp, color = C.labelDim))
         }
     }
 }
@@ -177,13 +177,13 @@ fun VFader(
         drawRoundRect(color.copy(alpha = 0.55f), Offset((w - slotW) / 2, y + th / 2), Size(slotW, travel - y), CornerRadius(slotW / 2, slotW / 2))
         if (ticks) for (i in 0..10) {
             val ty = th / 2 + travel * i / 10f
-            drawLine(Color(0x33FFFFFF), Offset(1f, ty), Offset(w * 0.14f, ty), 1f)
-            drawLine(Color(0x33FFFFFF), Offset(w - w * 0.14f, ty), Offset(w - 1f, ty), 1f)
+            drawLine(C.tick, Offset(1f, ty), Offset(w * 0.14f, ty), 1f)
+            drawLine(C.tick, Offset(w - w * 0.14f, ty), Offset(w - 1f, ty), 1f)
         }
         // thumb
         val pad = 2.dp.toPx()
         drawRoundRect(Brush.verticalGradient(listOf(C.faderHi, C.faderLo), y, y + th), Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()))
-        drawRoundRect(Color(0x33FFFFFF), Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()), style = Stroke(1f))
+        drawRoundRect(C.tick, Offset(pad, y), Size(w - pad * 2, th), CornerRadius(9.dp.toPx()), style = Stroke(1f))
         drawLine(color, Offset(pad + 6.dp.toPx(), y + th / 2), Offset(w - pad - 6.dp.toPx(), y + th / 2), 2.5f, StrokeCap.Round)
     }
 }
@@ -234,10 +234,10 @@ fun HFader(value: Float, onChange: (Float) -> Unit, onStart: () -> Unit = {}, mo
         drawRoundRect(C.line, Offset.Zero, size, rr, style = Stroke(1f))
         val slotH = max(4.dp.toPx(), h * 0.12f)
         drawRoundRect(C.well, Offset(th / 2, (h - slotH) / 2), Size(travel, slotH), CornerRadius(slotH / 2))
-        drawLine(Color(0x55FFFFFF), Offset(size.width / 2, h * 0.2f), Offset(size.width / 2, h * 0.8f), 1f)
+        drawLine(C.tickStrong, Offset(size.width / 2, h * 0.2f), Offset(size.width / 2, h * 0.8f), 1f)
         val x = value * travel
         drawRoundRect(Brush.horizontalGradient(listOf(C.faderHi, C.faderLo), x, x + th), Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()))
-        drawRoundRect(Color(0x33FFFFFF), Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()), style = Stroke(1f))
+        drawRoundRect(C.tick, Offset(x, 2.dp.toPx()), Size(th, h - 4.dp.toPx()), CornerRadius(10.dp.toPx()), style = Stroke(1f))
         val mix = Color(
             red = C.a.red + (C.b.red - C.a.red) * value, green = C.a.green + (C.b.green - C.a.green) * value, blue = C.a.blue + (C.b.blue - C.a.blue) * value
         )
@@ -296,7 +296,7 @@ fun PillButton(
     text: String, on: Boolean, color: Color, modifier: Modifier = Modifier, solid: Boolean = false,
     onClick: () -> Unit,
 ) {
-    PressBox(modifier.clip(RoundedCornerShape(12.dp)), onUp = onClick, pressOnDown = false, label = text) { pressed ->
+    PressBox(modifier.clip(RoundedCornerShape(D.r12)), onUp = onClick, pressOnDown = false, label = text) { pressed ->
         val bg = when {
             solid && on -> color
             on -> color.copy(alpha = 0.18f)
@@ -305,10 +305,10 @@ fun PillButton(
         Box(
             Modifier.fillMaxSize()
                 .background(if (pressed) bg.copy(alpha = min(1f, bg.alpha + 0.25f)) else bg)
-                .border(1.dp, if (on && !solid) color.copy(alpha = 0.8f) else C.line, RoundedCornerShape(12.dp)),
+                .border(1.dp, if (on && !solid) color.copy(alpha = 0.8f) else C.line, RoundedCornerShape(D.r12)),
             contentAlignment = Alignment.Center
         ) {
-            Text(text, style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 0.3.sp, color = if (solid && on) Color.Black else if (on) color else C.tx), textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
+            Text(text, style = T.tab.copy(fontWeight = FontWeight.Bold, fontSize = F.f12, letterSpacing = 0.3.sp, color = if (solid && on) Color.Black else if (on) color else C.tx), textAlign = TextAlign.Center, maxLines = 1, softWrap = false)
         }
     }
 }
@@ -317,12 +317,12 @@ fun PillButton(
 fun Chip(text: String, on: Boolean, color: Color = C.fx, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val cb by rememberUpdatedState(onClick)
     PressBox(
-        modifier.clip(RoundedCornerShape(9.dp)).background(if (on) color else C.s2)
+        modifier.clip(RoundedCornerShape(D.r9)).background(if (on) color else C.s2)
             .semantics { selected = on },
         onUp = { cb() }, pressOnDown = false, haptic = false, label = text,
     ) { _ ->
         Box(contentAlignment = Alignment.Center) {
-            Text(text, style = T.tab.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 5.dp, vertical = 7.dp), maxLines = 1, softWrap = false)
+            Text(text, style = T.tab.copy(fontSize = F.f11, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else C.mu), modifier = Modifier.padding(horizontal = 5.dp, vertical = 7.dp), maxLines = 1, softWrap = false)
         }
     }
 }
@@ -332,11 +332,11 @@ fun Toggle(on: Boolean, onChange: (Boolean) -> Unit, color: Color = C.a, label: 
     val cur by rememberUpdatedState(on)
     val cb by rememberUpdatedState(onChange)
     Box(
-        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(16.dp)).background(if (on) color.copy(alpha = .9f) else C.s4)
+        Modifier.size(48.dp, 48.dp).clip(RoundedCornerShape(D.r16)).background(if (on) color.copy(alpha = .9f) else C.s4)
             .semantics { role = Role.Switch; contentDescription = label; stateDescription = if (on) "On" else "Off" }
             .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false); val up = waitForUpOrCancellation(); if (up != null) cb(!cur) } }
     ) {
-        Box(Modifier.padding(6.dp).size(36.dp).offset(x = if (on) 6.dp else 0.dp).clip(RoundedCornerShape(10.dp)).background(Color.White))
+        Box(Modifier.padding(6.dp).size(36.dp).offset(x = if (on) 6.dp else 0.dp).clip(RoundedCornerShape(D.r10)).background(Color.White))
     }
 }
 
