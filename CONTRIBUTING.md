@@ -2,40 +2,62 @@
 
 <!-- index: design | Human contribution and review flow | A person or agent prepares a branch or pull request. -->
 
+Thanks for helping with FLUX. This is a small Android app with a real-time audio
+core, so the bar is: reproduce first, keep changes scoped, and verify on the JVM
+(and on a device when the change is audible or visible).
+
+## Quick start
+
+```bash
+git clone https://github.com/TomSzenessy/flux-dj.git
+cd flux-dj
+./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
+./gradlew :app:assembleDebug
+```
+
+Requirements are JDK 17 and Android SDK 36. If Gradle cannot find the SDK, create
+`local.properties` with `sdk.dir=/path/to/Android/sdk`. The full setup,
+device-test and release notes are in [`docs/development.md`](./docs/development.md).
+
 ## Before changing code
 
-1. Read [`AGENTS.md`](./AGENTS.md), [`docs/README.md`](./docs/README.md), and the
-   nearest scoped instructions.
-2. Search GitHub Issues and [`docs/ERROR_LOG.md`](./docs/ERROR_LOG.md); create or
-   update the issue-backed write-ahead record using
-   [`docs/ISSUE_TEMPLATE.md`](./docs/ISSUE_TEMPLATE.md), which owns the rule,
-   the profile filing requirements, and the labels.
-3. Run the relevant existing check before editing so a new failure is not
-   mistaken for a pre-existing one.
+1. Read [`README.md`](./README.md), [`docs/README.md`](./docs/README.md),
+   [`docs/architecture/app.md`](./docs/architecture/app.md) and the nearest
+   scoped instructions in [`AGENTS.md`](./AGENTS.md).
+2. Search GitHub Issues and [`docs/ERROR_LOG.md`](./docs/ERROR_LOG.md). For a
+   behavior change, open or update an issue-backed write-ahead record using
+   [`docs/ISSUE_TEMPLATE.md`](./docs/ISSUE_TEMPLATE.md).
+3. Run the existing tests first, so a new failure is not mistaken for a
+   pre-existing one.
 
 ## Change and review
 
-- Keep the change scoped to the issue; separate unrelated cleanup into issues.
-- Add or update a regression/contract test and durable documentation in the
-  same change.
-- Run focused checks, `make done`, and the real artifact check.
-- Use a fresh reviewer for broad, subjective, security-sensitive, or release
-  work. Address blockers; record residual uncertainty honestly.
-- Link the issue (`Fixes #N` or `Refs #N`) and include commands, observed
-  results, and remaining external gates in the PR.
-- Use `make resources` when a task needs current library, platform, security,
-  legal, media, or skill guidance; record the selected source and version.
-- For a real release, follow [`docs/production.md`](./docs/production.md) and
-  attach the evidence rows; do not substitute a green local check.
+- Keep the change scoped to the issue; split unrelated cleanup into its own
+  issue.
+- Add or update a regression test and the owning document in the same change.
+- Run focused checks, then `./gradlew :app:testDebugUnitTest :app:lintDebug`.
+  If Python 3.11+ is available, `make check` also validates docs/issue shape and
+  `make done` runs the repository gates.
+- Audio changes: do not allocate, do file I/O, log or take blocking locks inside
+  the mixer render loop. Follow
+  [`.agents/rules/audio-render-loop.md`](./.agents/rules/audio-render-loop.md).
+- UI changes: keep the 48 dp touch targets, content descriptions and the
+  compact-layout rules in [`docs/design.md`](./docs/design.md).
+- Include the commands you ran and the observed result in the pull request.
+  State any external gate (device, provider, CI) that remains open.
 
-## Commits and issues
+## Commits and pull requests
 
-Small, reviewable commits with a clear intent are preferred. Run `make done`
-before committing; the git commit gate repeats its docs checks. When a commit
-changes code that a document covers but genuinely does not affect it, use the
-`Docs-Unaffected:` trailer as [`docs/bindings.md`](./docs/bindings.md) defines.
-GitHub Issues are
-the live task/status register; do not recreate that register in Markdown.
+Small commits with a clear intent are preferred. PRs should link the issue
+(`Fixes #N` or `Refs #N`) and include evidence. Dependabot PRs are reviewed as
+dependency changes; the maintainer still reviews the diff and the build.
 
-Dependabot's automated PRs are reviewed as dependency changes and skip the
-human issue-reference gate; the maintainer still reviews the diff and CI.
+The repository uses the [AI_TEMPLATE](https://github.com/TomSzenessy/AI_TEMPLATE)
+agent kit for docs bindings, issue contracts and local gates. You do not need
+the kit to build the app, but its docs explain the non-obvious rules.
+
+## Security
+
+Do not open a public issue for an unpatched vulnerability. Use the private
+route in [`SECURITY.md`](./SECURITY.md).

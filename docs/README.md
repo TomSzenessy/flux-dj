@@ -39,6 +39,7 @@ itself and this table cannot drift. Edit the line in the document, not here.
 | [`building.md`](./building.md) | Product driver: feature list, research record, make next phases, product done, UI review | building or judging a product |
 | [`collaboration.md`](./collaboration.md) | Sharing work: fetch, push, pull-first, CI after push, claims, issue comment types | several people or agents work on one repository |
 | [`delegation.md`](./delegation.md) | Briefs, returns, verdicts | Work needs separate context or independence. |
+| [`development.md`](./development.md) | Build, test, device verification, and release setup | Setting up a development environment, testing on a device, or preparing a release. |
 | [`experiments.md`](./experiments.md) | Measured goals: true objective, evaluation ladder, local lab, experiment ledger | A goal is a measured score or metric, or real evaluations are slow, costly, or limited |
 | [`generated-files.md`](./generated-files.md) | Derived files, host adapters, and generated blocks | A generated file looks wrong, or a new agent host is added. |
 | [`hygiene.md`](./hygiene.md) | Deprecation markers, orphan files, change coupling, and product guardrails | Code or files look stale, duplicated, or ownerless. |

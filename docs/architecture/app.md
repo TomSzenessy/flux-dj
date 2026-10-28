@@ -25,7 +25,7 @@ Controller.*`; the Compose layer sees the same calls.
 | Module | Owns |
 |---|---|
 | `Controller.kt` | Snapshot state, construction/init, `poll()`/`needsPolling()`, transport setters, simple actions |
-| `LibraryController.kt` | MediaStore library, imports/folders, deck loading/decoding, analysis and caches, suggestions/filters, preview, history, sampler pads |
+| `LibraryController.kt` | MediaStore library, imports/folders, deck loading/decoding, resumable remote downloads, analysis and caches, suggestions/filters, preview, history, sampler pads |
 | `CloudController.kt` | Plex sign-in/sync/pagination, Drive/cloud folder scan, remote cache/download |
 | `RekordboxController.kt` | `collection.xml` import, match/apply precedence, duplicate report |
 | `OutputController.kt` | Output devices/modes, routing, alignment/mic measurement, output tests |
@@ -46,7 +46,12 @@ is the human navigation view, not a second command catalog.
 - **Streaming decode:** a track becomes playable before it is complete. `Track`
   keeps `available` (decoded) separate from `frames`; consumers use
   `decodedFrames`, and the mixer clamps every block to the `pcm` snapshot it
-  actually holds.
+  actually holds. Decoder input frames are packed per codec buffer for MP3 and
+  kept one sample per buffer for containers where that is required, so the
+  decode path does not wake once per source frame.
+- **Deck playback:** Hermite resampling for normal speed, a WSOLA grain engine
+  for key lock/pitch shift (new grains align with the running one), and reloop
+  re-enters the stored loop window rather than re-anchoring at the playhead.
 - **Deck ↔ track:** beat maths lives on `Track` (`beatIndex`, `beatPos`,
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
   to the deck, the UI and sync.
@@ -55,7 +60,8 @@ is the human navigation view, not a second command catalog.
   `Cloud`, `Rekordbox` or the SAF helpers.
 - **Persistence:** `SharedPreferences` for settings and per-track analysis,
   app-private files for waveform/PCM/history caches. One key format is owned by
-  the code that writes it (see `HANDOVER.md` for the recorded layout).
+  the code that writes it; `LibraryController` owns the analysis keys and
+  `docs/development.md` records the public development layout.
 - **Analysis:** decode and analysis run off the main thread; a track becomes
   playable before analysis finishes. rekordbox data is authoritative for grids
   and cues except for explicit hand edits.
@@ -81,10 +87,11 @@ is the human navigation view, not a second command catalog.
 
 ## Verification
 
--`./gradlew :app:testDebugUnitTest` covers the audio core, rekordbox parsing,
-tempo maps, matching, DSP and transport policy; `:app:lintDebug` is a blocking
-gate; `:app:assembleDebug`/`:app:assembleRelease` prove both builds.
-The on-device session on the reference Android tablet is the integration oracle.
+`./gradlew :app:testDebugUnitTest` covers the audio core, rekordbox parsing,
+tempo maps, matching, DSP, loops/pitch lock and transport policy; `:app:lintDebug`
+is a blocking gate; `:app:assembleDebug`/`:app:assembleRelease` prove both
+builds. A judged on-device session on an Android 13 tablet is the integration
+oracle; see [`../development.md`](../development.md).
 
 ## Toolchain
 

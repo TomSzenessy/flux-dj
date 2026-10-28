@@ -1,85 +1,134 @@
 # FLUX — touch DJ for Android
 
-A two-deck DJ app for Android tablets and phones, built around the feature set of
-the Pioneer DJ / AlphaTheta DDJ-FLX4 and redesigned for touch. Kotlin + Jetpack
-Compose with a pure-Kotlin audio engine; AndroidX and coroutines are the only
-third-party dependencies (no audio, HTTP, JSON or image libraries).
+FLUX is an open-source, two-deck DJ app for Android tablets and phones. It brings
+the DDJ-FLX4-style performance surface to glass: jog wheels, CDJ cue, sync, loops,
+hot cues, a three-band mixer, beat FX and scrolling waveforms, driven by a
+pure-Kotlin audio engine.
 
-## Highlights
+Built with Kotlin and Jetpack Compose. AndroidX and Kotlin coroutines are the
+only third-party dependencies; there is no vendor audio, HTTP, JSON or image
+library.
 
-- **Decks:** touch jog wheels (scratch + rim pitch-bend), CDJ-style cue, sync
-  with phase lock, key lock, slip, quantize, tempo ranges ±6/10/16/50 %,
-  hold-to-nudge.
-- **Pads:** hot cues (saved per track), beat loops, loop rolls, beat jump,
-  editable sampler (load a file or capture a loop/bar from a deck), key shift
-  (−4…+3 semitones, labelled **KEY**).
+**Status:** active development. The audio engine, library, rekordbox import and
+Plex/Drive sources are implemented; hardware-specific routing and a few UX
+checks still need a real device. See [Limitations](#limitations) and the
+[development guide](docs/development.md).
+
+## Features
+
+- **Decks:** touch jog (scratch + rim pitch-bend), CDJ-style cue, sync with
+  phase lock, key lock, slip, quantize, tempo ranges ±6/10/16/50 %, hold-to-nudge.
+- **Pads:** 8 hot cues, beat loops, loop rolls, beat jump, an editable sampler,
+  and key shift (−4…+3 semitones).
 - **Mixer:** trim, 3-band EQ, colour FX (filter / noise / crush / dub echo /
-  space), faders, crossfader curves, LED meters, phase meter.
-- **Beat FX:** echo, reverb, flanger, phaser, gate, crush — tempo-synced,
-  assignable to A / B / master.
-- **Waveforms:** 3-band scrolling waveforms on a shared, tempo-aware zoom
-  (pinch), beat grid, bar/phrase counter, overview strips.
-- **Beat-grid editor:** move, stretch around a pinned beat, set downbeat, fine
+  space), faders, crossfader curves, LED meters and a phase meter.
+- **Beat FX:** echo, reverb, flanger, phaser, gate and crush, tempo-synced and
+  assignable to deck A, deck B or master.
+- **Waveforms:** 3-band scrolling waveforms, beat grid, bar/phrase counter,
+  overview strips, pinch zoom and latency-compensated playheads.
+- **Beat-grid editor:** move, stretch around a pinned beat, set a downbeat, fine
   BPM, tap tempo.
-- **Library intelligence:** background analysis (BPM, beat grid, key/Camelot,
-  energy, rhythm pattern, vibe), smart filters and sorting, harmonic/tempo-aware
-  suggestions, headphone preview with scrubbing. Tracks covered by a rekordbox
-  `collection.xml` keep those grids and skip local BPM/key analysis, with `RB` /
-  `LOCAL` / `✎` provenance badges.
-- **Cloud sources:** sign in to Plex and stream the original files, or connect a
-  Google Drive/cloud folder. A `collection.xml` in that folder is imported and
-  overrides local analysis — except for BPM/grid/cues you edited by hand.
-  Audiobook/spoken-word Plex libraries are excluded; "My collection" limits Plex
-  to matches in your `collection.xml`.
-- **Fast loading:** streaming decode (playable after about one second), frames packed per
-  codec buffer so a local four-minute file decodes in a couple of seconds, an LRU disk
-  cache of decoded audio, and resumable downloads when the server drops the body.
-- **Audio routing:** single output, two devices (e.g. aux + Bluetooth) or split
-  cable (L = cue, R = master), with latency alignment; master recording to WAV
-  (`Music/FLUX` on API 29+; app-specific music folder below). With no CUE lit
-  the headphones carry the master mix; switching a CUE on makes them hear only
-  that deck.
-- **One timing model:** room, headphones and the picture are all outputs. The
-  microphone measures each real acoustic delay, aligns the faster output to the
-  slower one and holds the waveforms, beat grid, jogs and pulses back to match.
-  Manual nudging is a fine-tune, not a requirement.
-- **Grid-aware performance:** loop pads start immediately and snap to the
-  nearest beat using the playhead you hear/see (output latency compensated).
-  Waveform drags snap to the nearest half-beat; jump pads move by bars
-  (±1/2/4/8) and wrap inside an active loop.
+- **Library intelligence:** background BPM/beat-grid/key/Camelot analysis,
+  energy and vibe profiling, harmonic/tempo suggestions, filters, sorting and
+  headphone preview.
+- **rekordbox:** import `collection.xml` and keep its grids, keys, hot cues and
+  playlists. Hand edits win over a later import.
+- **Cloud sources:** sign in to Plex and stream the original files, or pick a
+  Google Drive/cloud folder. A `collection.xml` in that folder is imported too.
+- **Audio routing:** one output, two devices (e.g. aux + Bluetooth) or a split
+  cable (L = cue, R = master), with measured latency alignment. Record the
+  master mix to WAV.
 
-See [PLAN.md](PLAN.md) for the original design brief (historical),
-[docs/architecture/app.md](docs/architecture/app.md) for the code map and
-[docs/design.md](docs/design.md) for the visual rules. Live work is tracked in
-GitHub Issues.
+## Requirements
 
-## Build and test
+- JDK 17
+- Android SDK **API 36** (build tools 36); `compileSdk`/`targetSdk` are 36,
+  `minSdk` is 26
+- An Android device or emulator on Android 8.0+ (landscape recommended)
 
-Requires JDK 17 and the Android SDK (API 36).
+Android Studio is optional; the Gradle wrapper is the source of truth.
+
+## Build and run
 
 ```bash
-./gradlew :app:testDebugUnitTest    # unit tests (audio core, DSP, rekordbox, transport policy)
+git clone https://github.com/TomSzenessy/flux-dj.git
+cd flux-dj
+
+# Point Gradle at the SDK if it is not in ANDROID_HOME/ANDROID_SDK_ROOT:
+# echo "sdk.dir=/path/to/Android/sdk" > local.properties
+
+./gradlew :app:testDebugUnitTest    # JVM tests (audio, DSP, rekordbox, transport)
 ./gradlew :app:lintDebug            # blocking Android lint gate
-./gradlew :app:assembleDebug        # debug APK
-./gradlew :app:assembleRelease      # minified release APK
+./gradlew :app:assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The release build is unsigned unless `FLUX_KEYSTORE`, `FLUX_KEYSTORE_PASSWORD`,
-`FLUX_KEY_ALIAS` and `FLUX_KEY_PASSWORD` are supplied; CI then publishes only the
-signed `app-release.apk` for a `v*` tag. The version comes from the tag
-(`v1.2.3` → 1.2.3, code 10203), not a hardcoded value.
+A release build is minified and **unsigned** unless you provide
+`FLUX_KEYSTORE`, `FLUX_KEYSTORE_PASSWORD`, `FLUX_KEY_ALIAS` and
+`FLUX_KEY_PASSWORD`. The version is derived from a `vX.Y.Z` tag (for example
+`v1.2.3` → `1.2.3`, version code `10203`). See
+[docs/development.md](docs/development.md) for the full setup, device-test and
+release notes.
 
-GitHub Actions runs tests, lint and debug/release builds on every push
-(`.github/workflows/android.yml`). The debug APK is a workflow artifact, never a
-release asset.
+## Project layout
 
-## Repository
+| Path | What lives there |
+|---|---|
+| `app/src/main/java/app/flux/dj/` | Android app; `audio/` is the mixer, decks, decoder, analyser and DSP |
+| `app/src/test/` | Hermetic JVM tests and a synthetic `collection.xml` fixture |
+| `docs/architecture/app.md` | Module map and audio/state seams |
+| `docs/design.md` | Visual rules, tokens, accessibility and compact layout |
+| `docs/development.md` | Build, test, device verification, release signing |
+| `docs/` | Product and engineering docs, including the AI_TEMPLATE agent kit |
+| `PLAN.md` | Historical design brief (not current status) |
 
-The repository also carries the AI_TEMPLATE agent kit: `AGENTS.md`,
-`project.toml`, `make start`/`make done`, and the canonical issue contract in
-[docs/ISSUE_TEMPLATE.md](docs/ISSUE_TEMPLATE.md). Agent sessions start with
-`make start` and file work as GitHub Issues.
+Live work and design discussions are in GitHub Issues.
+
+## Privacy and permissions
+
+FLUX is local-first. It has no account system, telemetry or analytics, and does
+not upload your library. The app requests:
+
+- media read access (to index audio on the device),
+- `INTERNET` (Plex/Drive streaming only),
+- `RECORD_AUDIO` (optional acoustic alignment),
+- `BLUETOOTH_CONNECT` (optional output-device names, requested from Outputs).
+
+A Plex token, if you sign in, is kept in app-private preferences and excluded
+from Android cloud backup and device transfer. Streamed/downloaded audio and
+decoded PCM live in the app cache and can be cleared from the Outputs sheet.
+See [`SECURITY.md`](SECURITY.md) for reporting and
+[`docs/security.md`](docs/security.md) for the engineering baseline.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with
+[`CONTRIBUTING.md`](CONTRIBUTING.md); the repository uses an issue-backed
+write-ahead record and a small `make` gate from the included
+[AI_TEMPLATE](https://github.com/TomSzenessy/AI_TEMPLATE) kit.
+
+For a quick contribution you only need the Gradle commands above. For larger
+changes, run `make check` (repository structure/docs) and `make done` (local
+verification) if Python 3.11+ is available.
+
+## Limitations
+
+- Validated on an Android 13 tablet; USB-C routing, split-cable output,
+  Bluetooth combinations and acoustic latency still need broader device
+  testing.
+- The 12-minute decoder cap is deliberate; longer files are truncated with a
+  notice.
+- Plex playlists/library-section selection and rekordbox writing-back are not
+  implemented yet.
+
+## License and trademarks
+
+FLUX is released under the [MIT License](LICENSE).
+
+FLUX is an independent project. It is **not affiliated with, endorsed by or
+sponsored by** Pioneer DJ, AlphaTheta, rekordbox, Serato, Plex or Google. Product
+names and trademarks belong to their respective owners and are used only to
+describe compatibility or the hardware layout that inspired the interface.
 
 <!-- repoctl:project-readme -->
 > Project initialized: **flux-dj** (`android`). Agents start with [`AGENTS.md`](./AGENTS.md): `make start`, `make next`, `make done`.

@@ -7,7 +7,7 @@ kind = "android"
 phase = "development"
 # The root LICENSE file is authoritative; this SPDX label is metadata, not proof
 # that the text matches it. Replace both deliberately.
-license = "UNSELECTED"
+license = "MIT"
 owners = ["TomSzenessy"]
 
 [repository]
@@ -60,7 +60,7 @@ hosts = ["claude"]
 [kit]
 # Optional tunables (docs/capabilities.md#configuration); omitted keys keep the defaults.
 # doc_groups = { operate = "Start and operate", design = "Design and engineering", launch = "Product, privacy, and launch", extend = "Extensibility and evidence" }
-unbound_docs_ok = ["docs/legal/**", "docs/research/**", "docs/product/**", "docs/model-integration.md"]
+unbound_docs_ok = ["docs/legal/**", "docs/research/**", "docs/product/**", "docs/model-integration.md", "docs/development.md"]
 # overlap_limit = 0.30
 # deprecation_warning_days = 30
 # skill_review_days = 365
@@ -108,8 +108,8 @@ low = ["docs/**", "**/*.md"]
 # ceremony = { normal = "issue, focused test, make done, observed artifact" }   # optional per-tier text
 
 [security]
-contact = ""
-private_reporting = ""
+contact = "https://github.com/TomSzenessy/flux-dj/security/advisories/new"
+private_reporting = "https://github.com/TomSzenessy/flux-dj/security/advisories/new"
 
 [launch]
 legal_review = "pending"
