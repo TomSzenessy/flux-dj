@@ -38,6 +38,8 @@ class Deck(val index: Int) {
     @Volatile var syncFold = 1.0
     /** Beat-phase offset to the master that sync holds (0 = on the grid; set by nudging while synced). */
     @Volatile var syncOffset = 0.0
+    /** Follower ÷ master beat length, glided (sync's speed = master speed × this ÷ [syncFold]). */
+    @Volatile var syncGrid = 0.0
     @Volatile var phaseAdj = 1.0
     @Volatile var needAlign = false
     @Volatile var effRatio = 1.0             // for UI
@@ -133,14 +135,17 @@ class Deck(val index: Int) {
 
     fun seek(p: Double) { seekReq = wrapToLoop(p).coerceIn(0.0, endFrame()); visualHoldPos = -1.0 }
 
-    /** Apply a seek immediately (UI-originated jumps) so the eye does not wait for the audio thread. */
-    fun seekNow(p: Double) {
+    /**
+     * Apply a seek immediately (UI-originated jumps) so the eye does not wait for the audio thread.
+     * [keepSpeed] skips the restart-from-standstill ramp, for a sync re-align of a playing deck.
+     */
+    fun seekNow(p: Double, keepSpeed: Boolean = false) {
         val at = wrapToLoop(p).coerceIn(0.0, endFrame())
         pos = at
         // Publish the same target atomically so a seek arriving during the next block is not lost.
         seekReq = at
         resetGrains = true
-        rate = 0.0
+        if (!keepSpeed) rate = 0.0
         rampNs = 0L
         visualHoldPos = -1.0
         noRampSeek = false
@@ -311,7 +316,9 @@ class Deck(val index: Int) {
         val target = base * (1.0 + bend) * phaseAdj
         val scr = scratching
         val shift = keyShift
-        val wantGrain = playing && !scr && ((keyLock && abs(base - 1.0) > 0.002) || shift != 0)
+        // hysteresis: a synced ratio hovering near 1× must not switch engines (each switch glitches)
+        val lockOn = abs(base - 1.0) > if (grainMode) 0.001 else 0.002
+        val wantGrain = playing && !scr && ((keyLock && lockOn) || shift != 0)
         if (wantGrain != grainMode) { grainMode = wantGrain; resetGrains = true }
         val pitchF = (if (keyLock) 1.0 else base) * 2.0.pow(shift / 12.0)
         var r = rate

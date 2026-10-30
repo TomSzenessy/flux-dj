@@ -205,6 +205,7 @@ class Engine(private val ctx: Context) {
         d.syncRatio = syncTargetNow(d, master)
         d.syncFold = syncFold(currentBpm(d), currentBpm(master), deckRatio(master), d.syncRatio)
         d.syncOffset = 0.0
+        d.syncGrid = 0.0
         ensurePitchRange(d, d.syncRatio)
         d.syncOn = true
         d.needAlign = true
@@ -529,11 +530,11 @@ class Engine(private val ctx: Context) {
                     val lBeat = l.track!!.beatIndex(l.pos - delayL)
                     val dBeat = d.track!!.beatIndex(d.pos - delayD)
                     val targetBeat = lBeat + 4.0 * Math.round((dBeat - lBeat) / 4.0)
-                    d.seekNow(d.track!!.beatPos(targetBeat) + delayD)
+                    d.seekNow(d.track!!.beatPos(targetBeat) + delayD, keepSpeed = true)
                     d.needAlign = false
                     d.syncOffset = 0.0
                 }
-                syncStep(d, l, visualLatencyMs / 1000.0 * SR)
+                syncStep(d, l, visualLatencyMs / 1000.0 * SR, n)
             } else d.phaseAdj = 1.0
         }
 
@@ -873,37 +874,53 @@ internal fun syncPhaseError(masterBeat: Double, followerBeat: Double, fold: Doub
 }
 
 /** Longest a phase error takes to close (seconds), and the most sync bends the speed to do it. */
-private const val SYNC_LOCK_SEC = 1.0
-private const val SYNC_MAX_BEND = 0.01
+private const val SYNC_LOCK_SEC = 2.0
+private const val SYNC_MAX_BEND = 0.004
+/**
+ * Phase error (beats) sync leaves alone: rekordbox grids place single beats a few ms off (one track's
+ * markers swing 159–163 BPM beat to beat), and chasing that noise warbled the pitch. ~11 ms at 160 BPM
+ * is about where the ear starts to hear a flam.
+ */
+private const val SYNC_DEADBAND = 0.03
+/** Beats either side whose average sets the synced speed: long enough to ignore per-beat noise. */
+private const val SYNC_TEMPO_HALF = 16.0
+/** The synced speed glides to a new value over about this long (seconds), so it never steps. */
+private const val SYNC_GLIDE_SEC = 1.0
 /** A phase error this large (beats) is a jump, not drift: re-align the bars instead of bending. */
-private const val SYNC_REALIGN_BEATS = 0.12
+private const val SYNC_REALIGN_BEATS = 0.25
 
 /**
- * Speed factor that closes [err] master beats over about [SYNC_LOCK_SEC] at [masterBeatsPerSec],
- * capped at ±1 % so the correction is never audible as a pitch bend.
+ * Speed factor that closes [err] master beats (beyond [SYNC_DEADBAND]) over about [SYNC_LOCK_SEC],
+ * capped at ±0.4 % (7 cents) so the correction is never audible as a pitch bend.
  */
 internal fun phaseCorrection(err: Double, masterBeatsPerSec: Double): Double {
     if (masterBeatsPerSec <= 0.0) return 1.0
-    return 1.0 + (err / (masterBeatsPerSec * SYNC_LOCK_SEC)).coerceIn(-SYNC_MAX_BEND, SYNC_MAX_BEND)
+    val e = sign(err) * max(0.0, abs(err) - SYNC_DEADBAND)
+    return 1.0 + (e / (masterBeatsPerSec * SYNC_LOCK_SEC)).coerceIn(-SYNC_MAX_BEND, SYNC_MAX_BEND)
 }
 
 /**
  * One audio block of sync for follower [d] against master [l]. The speed is the master's speed times
- * the ratio of the two grids' beat lengths where each deck is audible, so a dynamic grid's sections
- * and the master's pitch fader are followed exactly instead of matched once. A small proportional
+ * the ratio of the two grids' beat lengths (averaged over 32 beats and glided, so a dynamic grid's per-beat
+ * noise does not warble the pitch) where each deck is audible: sections and the master's pitch
+ * fader are followed instead of matched once. Nothing changes while either deck is stopped. A small proportional
  * bend ([Deck.phaseAdj]) then pulls the beats back onto each other, so rounding in either grid or a
  * slightly wrong BPM cannot add up to drift over a long mix. Nudging either deck moves the held
  * offset instead of being fought; a sudden large error (a jump on the master) re-aligns the bars.
  * [delayFrames] is the output delay at 1× speed (the audible positions are compared, as in align).
  */
-internal fun syncStep(d: Deck, l: Deck, delayFrames: Double) {
+internal fun syncStep(d: Deck, l: Deck, delayFrames: Double, n: Int) {
     val dt = d.track ?: return; val lt = l.track ?: return
+    if (!d.playing || !l.playing) { d.phaseAdj = 1.0; return }
     val lRatio = deckRatio(l)
     val dPos = d.pos - delayFrames * d.effRatio
     val lPos = l.pos - delayFrames * l.effRatio
-    val lSpb = lt.spbAt(lPos)
-    d.syncRatio = (lRatio * dt.spbAt(dPos) / (lSpb * d.syncFold)).coerceIn(0.5, 2.0)
-    if (!d.playing || !l.playing || d.scratching || l.scratching || d.needAlign) { d.phaseAdj = 1.0; return }
+    val lSpb = lt.spbAround(lPos, SYNC_TEMPO_HALF)
+    // the grids' ratio glides (their noise must not step the speed); the master's fader applies at once
+    val grid = dt.spbAround(dPos, SYNC_TEMPO_HALF) / lSpb
+    d.syncGrid = if (d.syncGrid <= 0.0) grid else d.syncGrid + (grid - d.syncGrid) * (1.0 - exp(-n / (SR * SYNC_GLIDE_SEC)))
+    d.syncRatio = (lRatio * d.syncGrid / d.syncFold).coerceIn(0.5, 2.0)
+    if (d.scratching || l.scratching || d.needAlign) { d.phaseAdj = 1.0; return }
     val err = syncPhaseError(lt.beatIndex(lPos), dt.beatIndex(dPos), d.syncFold, d.syncOffset)
     if (d.bend != 0f || l.bend != 0f) {
         // the DJ is nudging: hold whatever offset they leave, rather than pulling it back

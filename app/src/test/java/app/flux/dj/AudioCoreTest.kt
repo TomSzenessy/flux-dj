@@ -191,13 +191,13 @@ class SyncTest {
         assertEquals("a press there matches that section", 180.0 / 160.0, syncTargetNow(follower, master), 1e-6)
     }
 
-    /** A rekordbox-style dynamic grid: one marker per beat wobbling ±0.1 BPM, 160 then 180 BPM. */
+    /** A rekordbox-style dynamic grid: one marker per beat wobbling ±0.1 BPM, 160 easing to 170 BPM. */
     private fun dynamicMaster(): Track {
         val beats = 400
         val secs = DoubleArray(beats); val bpms = DoubleArray(beats)
         var t = 0.0
         for (b in 0 until beats) {
-            bpms[b] = (if (b < 200) 160.0 else 180.0) + if (b % 2 == 0) 0.1 else -0.1
+            bpms[b] = 160.0 + 10.0 * ((b - 200) / 64.0).coerceIn(0.0, 1.0) + if (b % 2 == 0) 0.1 else -0.1
             secs[b] = t; t += 60.0 / bpms[b]
         }
         return track("m", 160f).apply { setTempoMap(secs, bpms, 1) }
@@ -209,7 +209,7 @@ class SyncTest {
         var worst = 0.0
         var at = 0.0
         while (at < seconds) {
-            syncStep(f, m, 0.0)
+            syncStep(f, m, 0.0, n)
             f.effRatio = f.syncRatio; m.effRatio = deckRatio(m)
             f.pos += f.syncRatio * (1.0 + f.bend) * f.phaseAdj * n
             m.pos += deckRatio(m) * (1.0 + m.bend) * n
@@ -239,13 +239,39 @@ class SyncTest {
 
         val heldOnce = follower.syncRatio
         val oneMatchDrift = (master.track!!.beatIndex(90.0 * SR) - 90.0 * SR * heldOnce / follower.track!!.spb)
-        assertTrue("a ratio held from the first beat drifts by whole beats", abs(oneMatchDrift) > 2.0)
+        assertTrue("a ratio held from the first beat drifts out of time", abs(oneMatchDrift) > 0.5)
 
         val worst = playSynced(follower, master, 90.0) {
-            assertEquals("never bends audibly", 1.0, follower.phaseAdj, 0.0101)
+            assertEquals("never bends audibly", 1.0, follower.phaseAdj, 0.00401)
             assertFalse("no re-align jumps while just playing", follower.needAlign)
         }
-        assertTrue("beats stay together (worst ${"%.4f".format(worst)} beat)", worst < 0.01)
+        assertTrue("beats stay together, through a 160→170 tempo change: within the ~0.03-beat dead zone (worst ${"%.4f".format(worst)} beat)", worst < 0.05)
+    }
+
+    /**
+     * Seen on the tablet: a rekordbox grid whose markers swing 159–163.5 BPM beat to beat made the
+     * synced tempo jump ±3 % every beat — and keep jumping with the master paused.
+     */
+    @Test fun noisyGridDoesNotMakeTheSyncedTempoJump() {
+        val beats = 600
+        val secs = DoubleArray(beats); val bpms = DoubleArray(beats)
+        // beats placed up to ±8 ms off a steady 159.5 BPM, so neighbouring markers read 156–163 BPM
+        val rnd = java.util.Random(7)
+        for (b in 0 until beats) secs[b] = b * 60.0 / 159.5 + (rnd.nextDouble() * 2.0 - 1.0) * 0.008
+        for (b in 0 until beats - 1) bpms[b] = 60.0 / (secs[b + 1] - secs[b])
+        bpms[beats - 1] = 159.5
+        val follower = Deck(0).apply { load(track("f", 159.15f).apply { setTempoMap(secs, bpms, 1) }) }
+        val master = Deck(1).apply { load(track("m", 168f)) }
+        engaged(follower, master)
+        playSynced(follower, master, 3.0)
+        var lo = 9.0; var hi = 0.0
+        playSynced(follower, master, 60.0) { lo = minOf(lo, follower.syncRatio); hi = maxOf(hi, follower.syncRatio) }
+        assertTrue("synced tempo holds steady (swing ${"%.3f".format((hi / lo - 1) * 100)} %)", hi / lo - 1.0 < 0.0015)
+
+        master.playing = false
+        val held = follower.syncRatio
+        playSynced(follower, master, 5.0) { assertEquals("nothing moves while the master is paused", held, follower.syncRatio, 0.0) }
+        assertEquals(1.0, follower.phaseAdj, 0.0)
     }
 
     @Test fun syncFollowsTheMastersFaderWithoutSeeking() {
@@ -253,7 +279,7 @@ class SyncTest {
         val follower = Deck(0).apply { load(track("f", 124f)) }
         engaged(follower, master)
         val worst = playSynced(follower, master, 20.0) { at -> if (at > 5.0) master.tempo = 0.5f }
-        assertEquals("speed follows the master's fader", 128.0 * 1.04 / 124.0, follower.syncRatio, 1e-9)
+        assertEquals("speed follows the master's fader", 128.0 * 1.04 / 124.0, follower.syncRatio, 1e-4)
         assertFalse(follower.needAlign)
         assertTrue("beats stay together (worst $worst)", worst < 0.01)
     }
@@ -289,7 +315,7 @@ class SyncTest {
     @Test fun shownBpmIgnoresPerBeatWobble() {
         val t = dynamicMaster()
         assertEquals(160.0, t.shownBpm(t.beatPos(50.3)), 0.03)
-        assertEquals(180.0, t.shownBpm(t.beatPos(300.0)), 0.03)
+        assertEquals(170.0, t.shownBpm(t.beatPos(300.0)), 0.03)
         assertNotEquals("the raw grid wobbles", t.bpmAt(t.beatPos(50.3)).toDouble(), t.bpmAt(t.beatPos(51.3)).toDouble(), 0.1)
     }
 

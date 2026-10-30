@@ -162,12 +162,14 @@ class Track(
      * wobble by a few hundredths of a BPM, which made the readout flicker; a real section change
      * still shows within a few beats.
      */
-    fun shownBpm(p: Double): Double {
-        if (bpm <= 0) return 0.0
-        if (mPos == null) return bpm.toDouble()
+    fun shownBpm(p: Double): Double = if (bpm <= 0) 0.0 else 60.0 * SR / spbAround(p, 4.0)
+
+    /** Frames per beat averaged over the [half] beats either side of [p] (exact for one tempo). */
+    fun spbAround(p: Double, half: Double): Double {
+        if (mPos == null) return spb
         val b = beatIndex(p)
-        val span = beatPos(b + 4.0) - beatPos(b - 4.0)
-        return if (span > 0.0) 8.0 * 60.0 * SR / span else bpmAt(p).toDouble()
+        val span = beatPos(b + half) - beatPos(b - half)
+        return if (span > 0.0) span / (2.0 * half) else spbAt(p)
     }
     val keyName: String get() = Keys.name(key)
     val camelot: String get() = Keys.camelot(key)

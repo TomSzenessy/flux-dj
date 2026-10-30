@@ -56,10 +56,12 @@ is the human navigation view, not a second command catalog.
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
   to the deck, the UI and sync. SYNC matches where the master is at that moment
   and aligns the bars; then every audio block `syncStep` sets the follower's speed
-  from both grids' beat lengths at the audible positions (so dynamic-grid sections
-  and the master's fader are followed exactly) and a capped ±1 % proportional bend
-  pulls the beats back together, so nothing drifts over a long mix. Nudging either
-  deck moves the held offset; a jump of more than ~⅛ beat re-aligns the bars. The
+  from both grids' beat lengths at the audible positions, averaged over 32 beats
+  (rekordbox grids can swing several BPM beat to beat; sections and the master's
+  fader are followed; the grid part glides over ~1 s), and a ±0.4 % bend outside an ~11 ms dead
+  zone pulls the beats back together, so nothing drifts over a long mix and grid
+  noise never moves the pitch. Nothing changes while either deck is stopped. Nudging either deck moves the held offset; a jump
+  of more than ¼ beat re-aligns the bars without restarting the deck's speed. The
   BPM readout uses `Track.shownBpm` (8-beat average), and a synced deck shows the
   master's number, so per-beat grid noise never reaches the screen.
 - **Library ↔ sources:** `Controller` normalises MediaStore, imported folders,
