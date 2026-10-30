@@ -160,7 +160,7 @@ status = "active"
 owner = "TomSzenessy"
 quality_oracle = "Gradle unit tests for the audio core plus a judged on-device mix session on the reference Android tablet"
 verification = [["../gradlew", ":app:testDebugUnitTest"], ["../gradlew", ":app:lintDebug"], ["../gradlew", ":app:assembleDebug"]]
-extra_paths = ["mockup"]
+extra_paths = ["mockup", "scripts"]
 [[skills]]
 package = "Jakeschincariol/replica-skill@product-recon"
 pack = "product"
