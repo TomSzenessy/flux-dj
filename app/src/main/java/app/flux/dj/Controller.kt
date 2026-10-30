@@ -158,6 +158,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private var lastRemain = intArrayOf(-1, -1)
     private val lastRatio = DoubleArray(2) { Double.NaN }
     private val lastShownBpm = FloatArray(2) { Float.NaN }
+    private val BPM_DISPLAY_STEP = 0.5f
     private val lastBarText = arrayOfNulls<String>(2)
     private var lastMasterText = ""
     internal var nextJob: Job? = null
@@ -192,11 +193,12 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 u.hasBpm = t.bpm > 0
                 // tempo at the playhead (follows tempo maps); "ORIG" = the track's own tempo there
                 val here = t.bpmAt(vpos(i))
-                // A dynamic/rekordbox grid can change BPM slightly every beat. Show the track's
-                // stable (dominant) tempo for the big number so the master deck does not appear to
-                // drift while the other deck is synced; the grid still follows the map internally.
-                val shownBpm = if (t.variable) t.bpm else here
-                if (ratio != lastRatio[i] || shownBpm != lastShownBpm[i] || u.analysing) {
+                // Show the tempo that is actually playing at the playhead, so a synced pair reads
+                // the same number. A dynamic grid carries a marker per beat whose BPM wobbles by a
+                // few hundredths; repaint only for a real change so the readout does not flicker.
+                val shownBpm = here
+                val bpmChanged = lastShownBpm[i].isNaN() || kotlin.math.abs(shownBpm - lastShownBpm[i]) >= BPM_DISPLAY_STEP
+                if (ratio != lastRatio[i] || bpmChanged || u.analysing) {
                     lastRatio[i] = ratio; lastShownBpm[i] = shownBpm
                     u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm * ratio) else if (u.analysing) "···" else "–"
                     u.origBpm = if (t.bpm > 0) String.format("%.1f", shownBpm) else ""

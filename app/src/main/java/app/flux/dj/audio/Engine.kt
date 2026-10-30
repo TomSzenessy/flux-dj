@@ -211,13 +211,6 @@ class Engine(private val ctx: Context) {
         d.needAlign = true
     }
 
-    /** Tempo at the playhead, using the loop-in tempo while a loop is active. */
-    private fun currentBpm(d: Deck): Double {
-        val t = d.track ?: return d.bpm.toDouble()
-        if (t.bpm <= 0) return 0.0
-        return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
-    }
-
     fun startTransition(beats: Float) { transCancel = false; transReq = beats }
     fun cancelTransition() { transCancel = true }
 
@@ -857,9 +850,26 @@ internal fun syncMatchRatio(followerBpm: Double, masterBpm: Double, masterRatio:
  */
 internal fun deckRatio(d: Deck): Double = if (d.syncOn) d.syncRatio else 1.0 + d.tempo * d.range
 
-/** One-time match: dominant master tempo ÷ dominant follower tempo. */
-internal fun syncTargetNow(f: Deck, l: Deck): Double =
-    syncMatchRatio(nominalBpm(f), nominalBpm(l), deckRatio(l))
+/**
+ * The tempo a deck is playing at right now: the grid segment under its playhead (loop-in while a
+ * loop is active), before the pitch ratio. A rekordbox dynamic grid can hold 160 for three minutes
+ * and 180 for two; the track's average is not what either deck is playing.
+ */
+internal fun currentBpm(d: Deck): Double {
+    val t = d.track ?: return d.bpm.toDouble()
+    if (t.bpm <= 0) return 0.0
+    return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
+}
+
+/**
+ * One match, made where the master is *now*: the section under its playhead, not the track average.
+ * After this the deck holds the ratio; only the master's fader is followed (see the mixer loop).
+ */
+internal fun syncTargetNow(f: Deck, l: Deck): Double {
+    val follower = currentBpm(f).takeIf { it > 0.0 } ?: nominalBpm(f)
+    val master = currentBpm(l).takeIf { it > 0.0 } ?: nominalBpm(l)
+    return syncMatchRatio(follower, master, deckRatio(l))
+}
 
 /** Pitch ranges offered by the UI; reused by sync so it never allocates a fresh list. */
 private val PITCH_RANGES = floatArrayOf(0.06f, 0.10f, 0.16f, 0.50f)

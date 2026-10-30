@@ -171,26 +171,24 @@ class SyncTest {
     }
 
     /**
-     * A rekordbox dynamic grid says ~138.9 BPM under the playhead while the deck displays 128.01.
-     * Sync must match what both decks show, and must not depend on where the playheads are — the old
-     * code used the grid segment, so every SYNC press re-pitched the deck.
+     * The match is made where the master is *now*: a rekordbox dynamic grid can hold 160 BPM for
+     * three minutes and 180 for two. Matching the track average (159.2) left the follower 3 % fast
+     * while both decks displayed the same number, so the beats faded apart.
      */
-    @Test fun syncMatchesTheDisplayedTempoNotTheGridSegment() {
-        val masterTrack = track("m", 128.01f)
-        masterTrack.setTempoMap(doubleArrayOf(0.0, 1.296, 3.28), doubleArrayOf(138.89, 120.97, 138.89), 1)
-        masterTrack.bpm = 128.01f                       // what the deck shows (dominant tempo)
+    @Test fun syncMatchesTheSectionUnderTheMastersPlayhead() {
+        val masterTrack = track("m", 159.2f)
+        masterTrack.setTempoMap(doubleArrayOf(0.0, 0.4, 10.0), doubleArrayOf(159.03, 159.22, 180.0), 1)
+        val follower = Deck(0).apply { load(track("f", 160f)) }
+        val master = Deck(1).apply { load(masterTrack) }
 
-        val follower = Deck(0).apply { load(track("f", 128f)) }
-        val master = Deck(1).apply { load(masterTrack); tempo = 0.6f; range = 0.08f; effRatio = 1.048 }
+        master.pos = 0.2 * SR
+        val atStart = syncTargetNow(follower, master)
+        assertEquals("matches the section being played, not the average",
+            currentBpm(master) / currentBpm(follower), atStart, 1e-9)
 
-        assertEquals("grid segment under the playhead", 138.89f, masterTrack.bpmAt(0.0), 1f)
-        val r = syncTargetNow(follower, master)
-        assertEquals("matches the displayed BPM", 1.0481, r, 0.0005)
-
-        // moving either playhead must not change the match
-        follower.pos = 20.0 * SR
-        master.pos = 40.0 * SR
-        assertEquals("same match anywhere in the track", r, syncTargetNow(follower, master), 1e-9)
+        master.pos = 15.0 * SR
+        assertEquals("the last section is 180 BPM", 180.0, currentBpm(master), 0.5)
+        assertEquals("a press there matches that section", 180.0 / 160.0, syncTargetNow(follower, master), 1e-6)
     }
 
     @Test fun syncOffKeepsTheMatchedSpeed() {
