@@ -57,6 +57,26 @@ Installing restarts the app; do not install while a set is playing. The app is
 landscape-first and requests media access on first library use. Microphone
 alignment and Bluetooth device names are optional and requested only when used.
 
+## Put a rekordbox library on the device
+
+`scripts/sync-music.sh` copies the music folder (and any `collection.xml` in it)
+to a connected device, incrementally, and asks the media scanner to index it:
+
+```bash
+scripts/sync-music.sh                       # ~/Music/dj songs → /sdcard/Music/dj songs
+scripts/sync-music.sh "/path/to/folder"     # any folder
+XML=~/Downloads/collection.xml scripts/sync-music.sh   # push a newer XML as collection.xml
+ANDROID_SERIAL=a6103e95 scripts/sync-music.sh          # several devices attached
+```
+
+`adb push --sync` sends only files whose mtime/size differ, so a repeat run is
+cheap. Keep the destination under `/sdcard/Music` and add it once in FLUX
+(Library → ＋ Folder → Music → the folder): the same tree then survives app
+restarts, and because the folder holds `collection.xml`, one pick imports the
+audio and the rekordbox grids, cues and playlists together. The XML path in the
+collection is the desktop's, so matching is by file name/title/artist — the same
+matcher the import report describes.
+
 ## What to test on a device
 
 The JVM suite cannot prove audio routing, acoustic timing or the UI. For a change
