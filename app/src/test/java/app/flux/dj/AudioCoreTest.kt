@@ -191,6 +191,108 @@ class SyncTest {
         assertEquals("a press there matches that section", 180.0 / 160.0, syncTargetNow(follower, master), 1e-6)
     }
 
+    /** A rekordbox-style dynamic grid: one marker per beat wobbling ±0.1 BPM, 160 then 180 BPM. */
+    private fun dynamicMaster(): Track {
+        val beats = 400
+        val secs = DoubleArray(beats); val bpms = DoubleArray(beats)
+        var t = 0.0
+        for (b in 0 until beats) {
+            bpms[b] = (if (b < 200) 160.0 else 180.0) + if (b % 2 == 0) 0.1 else -0.1
+            secs[b] = t; t += 60.0 / bpms[b]
+        }
+        return track("m", 160f).apply { setTempoMap(secs, bpms, 1) }
+    }
+
+    /** Play both decks for [seconds] the way the mixer does; returns the largest beat error after 1 s. */
+    private fun playSynced(f: Deck, m: Deck, seconds: Double, each: (Double) -> Unit = {}): Double {
+        val n = 256
+        var worst = 0.0
+        var at = 0.0
+        while (at < seconds) {
+            syncStep(f, m, 0.0)
+            f.effRatio = f.syncRatio; m.effRatio = deckRatio(m)
+            f.pos += f.syncRatio * (1.0 + f.bend) * f.phaseAdj * n
+            m.pos += deckRatio(m) * (1.0 + m.bend) * n
+            at += n.toDouble() / SR
+            each(at)
+            val e = abs(syncPhaseError(m.track!!.beatIndex(m.pos), f.track!!.beatIndex(f.pos), f.syncFold, f.syncOffset))
+            if (at > 1.0) worst = maxOf(worst, e)
+        }
+        return worst
+    }
+
+    private fun engaged(f: Deck, m: Deck) {
+        f.syncOn = true
+        f.syncRatio = syncTargetNow(f, m)
+        f.syncFold = syncFold(currentBpm(f), currentBpm(m), deckRatio(m), f.syncRatio)
+        f.playing = true; m.playing = true
+    }
+
+    /**
+     * The drift bug: sync matched the tempo once and held it, so a dynamic grid's next section (or a
+     * BPM a hundredth off) slid the beats apart over a long mix. The lock keeps them within 1 %.
+     */
+    @Test fun syncStaysOnTheBeatThroughADynamicGrid() {
+        val master = Deck(1).apply { load(dynamicMaster()) }
+        val follower = Deck(0).apply { load(track("f", 159.97f)) }
+        engaged(follower, master)
+
+        val heldOnce = follower.syncRatio
+        val oneMatchDrift = (master.track!!.beatIndex(90.0 * SR) - 90.0 * SR * heldOnce / follower.track!!.spb)
+        assertTrue("a ratio held from the first beat drifts by whole beats", abs(oneMatchDrift) > 2.0)
+
+        val worst = playSynced(follower, master, 90.0) {
+            assertEquals("never bends audibly", 1.0, follower.phaseAdj, 0.0101)
+            assertFalse("no re-align jumps while just playing", follower.needAlign)
+        }
+        assertTrue("beats stay together (worst ${"%.4f".format(worst)} beat)", worst < 0.01)
+    }
+
+    @Test fun syncFollowsTheMastersFaderWithoutSeeking() {
+        val master = Deck(1).apply { load(track("m", 128f)) }
+        val follower = Deck(0).apply { load(track("f", 124f)) }
+        engaged(follower, master)
+        val worst = playSynced(follower, master, 20.0) { at -> if (at > 5.0) master.tempo = 0.5f }
+        assertEquals("speed follows the master's fader", 128.0 * 1.04 / 124.0, follower.syncRatio, 1e-9)
+        assertFalse(follower.needAlign)
+        assertTrue("beats stay together (worst $worst)", worst < 0.01)
+    }
+
+    @Test fun nudgingWhileSyncedHoldsTheNewOffset() {
+        val master = Deck(1).apply { load(track("m", 128f)) }
+        val follower = Deck(0).apply { load(track("f", 128f)) }
+        engaged(follower, master)
+        playSynced(follower, master, 1.0)
+        playSynced(follower, master, 0.5) { follower.bend = 0.04f }
+        follower.bend = 0f
+        val held = follower.syncOffset
+        assertTrue("the nudge moved the offset", abs(held) > 0.01)
+        playSynced(follower, master, 10.0)
+        assertEquals("sync keeps the nudge instead of pulling it back", held, follower.syncOffset, 1e-9)
+        assertEquals(1.0, follower.phaseAdj, 1e-4)
+    }
+
+    @Test fun halfTimeSyncLocksEveryOtherBeat() {
+        val master = Deck(1).apply { load(track("m", 174f)) }
+        val follower = Deck(0).apply { load(track("f", 86.5f)) }
+        engaged(follower, master)
+        assertEquals("two master beats per follower beat", 2.0, follower.syncFold, 0.0)
+        assertTrue(playSynced(follower, master, 30.0) < 0.01)
+    }
+
+    @Test fun phaseErrorWrapsToHalfABeat() {
+        assertEquals(0.1, syncPhaseError(10.1, 9.0, 1.0, 0.0), 1e-9)
+        assertEquals(-0.1, syncPhaseError(9.9, 9.0, 1.0, 0.0), 1e-9)
+        assertEquals(-0.25, syncPhaseError(12.75, 6.0, 2.0, 0.0), 1e-9)
+    }
+
+    @Test fun shownBpmIgnoresPerBeatWobble() {
+        val t = dynamicMaster()
+        assertEquals(160.0, t.shownBpm(t.beatPos(50.3)), 0.03)
+        assertEquals(180.0, t.shownBpm(t.beatPos(300.0)), 0.03)
+        assertNotEquals("the raw grid wobbles", t.bpmAt(t.beatPos(50.3)).toDouble(), t.bpmAt(t.beatPos(51.3)).toDouble(), 0.1)
+    }
+
     @Test fun syncOffKeepsTheMatchedSpeed() {
         val d = Deck(0).apply { load(track("f", 128f)); range = 0.08f }
         d.syncOn = true

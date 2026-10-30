@@ -34,10 +34,10 @@ class Deck(val index: Int) {
     @Volatile var slipOn = false             // slip mode enabled (jog scratch / roll return to ghost position)
     @Volatile var syncOn = false
     @Volatile var syncRatio = 1.0
-    /** Master tempo the sync ratio was matched against; 0 = recompute on the next block. */
-    @Volatile var syncRefBpm = 0f
-    /** Master playback ratio when the one-time sync match was made; -1 = not matched yet. */
-    @Volatile var syncRefMaster = -1f
+    /** Master beats per follower beat while synced (1, or 2 / 0.5 for half/double time). */
+    @Volatile var syncFold = 1.0
+    /** Beat-phase offset to the master that sync holds (0 = on the grid; set by nudging while synced). */
+    @Volatile var syncOffset = 0.0
     @Volatile var phaseAdj = 1.0
     @Volatile var needAlign = false
     @Volatile var effRatio = 1.0             // for UI

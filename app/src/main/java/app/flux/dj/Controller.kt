@@ -156,9 +156,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     internal val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var lastTenths = longArrayOf(-1, -1)
     private var lastRemain = intArrayOf(-1, -1)
-    private val lastRatio = DoubleArray(2) { Double.NaN }
     private val lastShownBpm = FloatArray(2) { Float.NaN }
-    private val BPM_DISPLAY_STEP = 0.5f
+    private val lastOrigBpm = FloatArray(2) { Float.NaN }
     private val lastBarText = arrayOfNulls<String>(2)
     private var lastMasterText = ""
     internal var nextJob: Job? = null
@@ -191,22 +190,25 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 val ratio = d.effRatio
                 u.tempo = ((ratio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f)
                 u.hasBpm = t.bpm > 0
-                // tempo at the playhead (follows tempo maps); "ORIG" = the track's own tempo there
                 val here = t.bpmAt(vpos(i))
-                // Show the tempo that is actually playing at the playhead, so a synced pair reads
-                // the same number. A dynamic grid carries a marker per beat whose BPM wobbles by a
-                // few hundredths; repaint only for a real change so the readout does not flicker.
-                val shownBpm = here
-                val bpmChanged = lastShownBpm[i].isNaN() || kotlin.math.abs(shownBpm - lastShownBpm[i]) >= BPM_DISPLAY_STEP
-                if (ratio != lastRatio[i] || bpmChanged || u.analysing) {
-                    lastRatio[i] = ratio; lastShownBpm[i] = shownBpm
-                    u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm * ratio) else if (u.analysing) "···" else "–"
-                    u.origBpm = if (t.bpm > 0) String.format("%.1f", shownBpm) else ""
-                    u.pct = if (t.bpm > 0) String.format("%+.1f%%", (ratio - 1.0) * 100) else ""
+                // "ORIG" = the track's own tempo at the playhead (averaged over a few beats so a
+                // dynamic grid does not flicker). A synced deck plays the master's tempo, so it shows
+                // the master's number rather than its own grid × a ratio that follows every beat.
+                val orig = t.shownBpm(vpos(i))
+                val m = engine.decks[1 - i]; val mt = m.track
+                val shownBpm = if (d.syncOn && mt != null && mt.bpm > 0) mt.shownBpm(vpos(1 - i)) * deckRatio(m) else orig * ratio
+                // ignore changes below the last digit so a value on a rounding edge does not toggle
+                val bpmChanged = lastShownBpm[i].isNaN() || kotlin.math.abs(shownBpm - lastShownBpm[i]) >= 0.06 ||
+                    lastOrigBpm[i].isNaN() || kotlin.math.abs(orig - lastOrigBpm[i]) >= 0.06
+                if (bpmChanged || u.analysing) {
+                    lastShownBpm[i] = shownBpm.toFloat(); lastOrigBpm[i] = orig.toFloat()
+                    u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm) else if (u.analysing) "···" else "–"
+                    u.origBpm = if (t.bpm > 0) String.format("%.1f", orig) else ""
+                    u.pct = if (t.bpm > 0 && orig > 0) String.format("%+.1f%%", (shownBpm / orig - 1.0) * 100) else ""
                 }
                 if (d.syncOn && tick.longValue % 75L == 0L) {
                     android.util.Log.i("FLUX-SYNC", "deck ${deckName(i)} ‘${t.title}’ sync=${d.syncOn} ratio=${d.effRatio} " +
-                        "syncRatio=${d.syncRatio} refMaster=${d.syncRefMaster} refBpm=${d.syncRefBpm} tempo=${d.tempo} range=${d.range} " +
+                        "syncRatio=${d.syncRatio} fold=${d.syncFold} offset=${d.syncOffset} phaseAdj=${d.phaseAdj} tempo=${d.tempo} range=${d.range} " +
                         "trackBpm=${t.bpm} here=${here} phase=${d.phase()} pos=${d.pos.toLong()} variable=${t.variable}")
                 }
                 val vp = vpos(i)
@@ -344,9 +346,8 @@ class Controller(app: Application) : AndroidViewModel(app) {
     }
     fun pitch(i: Int, v: Float) {
         val d = deck(i)
+        // a synced partner follows this fader block by block; re-seeking it here made it jump
         d.setTempoFader(v)
-        val other = deck(1 - i)
-        if (other.syncOn) other.needAlign = true
     }
     fun toggleQuantize() {
         quantize = !quantize; engine.decks.forEach { it.quantize = quantize }

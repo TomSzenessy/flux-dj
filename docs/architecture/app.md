@@ -54,13 +54,19 @@ is the human navigation view, not a second command catalog.
   re-enters the stored loop window rather than re-anchoring at the playhead.
 - **Deck ↔ track:** beat maths lives on `Track` (`beatIndex`, `beatPos`,
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
-  to the deck, the UI and sync. Sync makes one match where the master is at that
-  moment (the grid section under its playhead, not the track average), aligns the
-  bars once, then holds the ratio and follows only the master's pitch fader —
-  never the per-beat noise of a dynamic grid.
+  to the deck, the UI and sync. SYNC matches where the master is at that moment
+  and aligns the bars; then every audio block `syncStep` sets the follower's speed
+  from both grids' beat lengths at the audible positions (so dynamic-grid sections
+  and the master's fader are followed exactly) and a capped ±1 % proportional bend
+  pulls the beats back together, so nothing drifts over a long mix. Nudging either
+  deck moves the held offset; a jump of more than ~⅛ beat re-aligns the bars. The
+  BPM readout uses `Track.shownBpm` (8-beat average), and a synced deck shows the
+  master's number, so per-beat grid noise never reaches the screen.
 - **Library ↔ sources:** `Controller` normalises MediaStore, imported folders,
   Plex and Drive into one `Track`/library model; source-specific code stays in
-  `Cloud`, `Rekordbox` or the SAF helpers.
+  `Cloud`, `Rekordbox` or the SAF helpers. A track has one entry: when a Plex
+  copy has the same file stem as a local file, the local entry wins, so the app
+  never shows the same song twice with two different analyses.
 - **Persistence:** `SharedPreferences` for settings and per-track analysis,
   app-private files for waveform/PCM/history caches. One key format is owned by
   the code that writes it; `LibraryController` owns the analysis keys and

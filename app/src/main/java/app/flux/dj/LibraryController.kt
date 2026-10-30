@@ -744,8 +744,19 @@ internal fun Controller.refMeta(forDeck: Int): RefMeta? {
     return RefMeta(t.bpm, t.key, t.energy, t.vibe, t.pattern, t.title)
 }
 
-internal fun Controller.allItems(): List<LibItem> =
-    (demos + imported + plexItems + deviceTracks).distinctBy { it.id }
+internal fun Controller.allItems(): List<LibItem> {
+    val all = demos + imported + plexItems + deviceTracks
+    // One entry per file. A Plex mirror of a track that is already on the tablet would otherwise
+    // appear as a second item with its own analysis ("same song, two BPMs"), and sync then compares
+    // two different tempo bases. The local copy wins; the Plex copy only shows when nothing local
+    // has the same file stem.
+    val localStems = (demos + imported.filter { it.sourceKind != "plex" } + deviceTracks)
+        .filter { it.fileStem.isNotEmpty() }
+        .map { Rekordbox.norm(it.fileStem) }
+        .toHashSet()
+    return all.filter { it.sourceKind != "plex" || Rekordbox.norm(it.fileStem) !in localStems }
+        .distinctBy { it.id }
+}
 /** Everything the user hasn't removed from the library. */
 internal fun Controller.visibleItems(): List<LibItem> = allItems().filter { it.id !in hidden }
 /** Hides the track from FLUX — the file itself is never touched. */

@@ -198,15 +198,14 @@ class Engine(private val ctx: Context) {
         engageSync(d, o)
     }
 
-    /** Match [d] to [master] once, then follow the master's pitch fader. */
+    /** Match [d] to [master], align the bars, then keep its beats locked (see [syncStep]). */
     private fun engageSync(d: Deck, master: Deck) {
         if (nominalBpm(d) <= 0.0 || nominalBpm(master) <= 0.0) return
         if (master.syncOn) releaseSync(master)   // the deck we follow becomes the master
         d.syncRatio = syncTargetNow(d, master)
+        d.syncFold = syncFold(currentBpm(d), currentBpm(master), deckRatio(master), d.syncRatio)
+        d.syncOffset = 0.0
         ensurePitchRange(d, d.syncRatio)
-        val masterSpeed = deckRatio(master).toFloat()
-        d.syncRefMaster = masterSpeed
-        d.syncRefBpm = (nominalBpm(master) * masterSpeed).toFloat()
         d.syncOn = true
         d.needAlign = true
     }
@@ -522,17 +521,6 @@ class Engine(private val ctx: Context) {
         for (i in 0..1) {
             val d = decks[i]; val l = decks[1 - i]
             if (d.syncOn && nominalBpm(d) > 0.0 && nominalBpm(l) > 0.0) {
-                // Match once. After that, only follow the master's pitch fader; tempo markers,
-                // loops and jumps must never re-pitch the synced deck.
-                val masterSpeed = deckRatio(l).toFloat()
-                if (d.syncRefMaster < 0f) {
-                    d.syncRatio = syncTargetNow(d, l)
-                    d.syncRefMaster = masterSpeed
-                    d.syncRefBpm = (nominalBpm(l) * masterSpeed).toFloat()
-                } else if (abs(masterSpeed - d.syncRefMaster) > 0.0005f) {
-                    d.syncRatio = (d.syncRatio * (masterSpeed / d.syncRefMaster)).coerceIn(0.5, 2.0)
-                    d.syncRefMaster = masterSpeed
-                }
                 if (d.needAlign && d.playing && l.playing) {
                     // Align the bars you actually hear/see: compare the audible (output-delayed)
                     // positions, then put the engine one delay ahead so the picture snaps immediately.
@@ -543,10 +531,9 @@ class Engine(private val ctx: Context) {
                     val targetBeat = lBeat + 4.0 * Math.round((dBeat - lBeat) / 4.0)
                     d.seekNow(d.track!!.beatPos(targetBeat) + delayD)
                     d.needAlign = false
+                    d.syncOffset = 0.0
                 }
-                // No continuous pitch nudging: after the one-time phase match the ratio stays put,
-                // so synced audio cannot flutter. Nudge with the jog if a long mix drifts.
-                d.phaseAdj = 1.0
+                syncStep(d, l, visualLatencyMs / 1000.0 * SR)
             } else d.phaseAdj = 1.0
         }
 
@@ -853,7 +840,8 @@ internal fun deckRatio(d: Deck): Double = if (d.syncOn) d.syncRatio else 1.0 + d
 /**
  * The tempo a deck is playing at right now: the grid segment under its playhead (loop-in while a
  * loop is active), before the pitch ratio. A rekordbox dynamic grid can hold 160 for three minutes
- * and 180 for two; the track's average is not what either deck is playing.
+ * and 180 for two; the track's average is not what either deck is playing. Used for the one-time
+ * match on SYNC; while synced, [syncStep] follows the grids beat by beat.
  */
 internal fun currentBpm(d: Deck): Double {
     val t = d.track ?: return d.bpm.toDouble()
@@ -869,6 +857,62 @@ internal fun syncTargetNow(f: Deck, l: Deck): Double {
     val follower = currentBpm(f).takeIf { it > 0.0 } ?: nominalBpm(f)
     val master = currentBpm(l).takeIf { it > 0.0 } ?: nominalBpm(l)
     return syncMatchRatio(follower, master, deckRatio(l))
+}
+
+/** Master beats per follower beat for a match: 1, or a power of two when tempos were folded. */
+internal fun syncFold(followerBpm: Double, masterBpm: Double, masterRatio: Double, ratio: Double): Double {
+    if (followerBpm <= 0.0 || masterBpm <= 0.0 || ratio <= 0.0) return 1.0
+    val x = (masterBpm * masterRatio) / (followerBpm * ratio)
+    return 2.0.pow(Math.round(ln(x) / ln(2.0)).toDouble())
+}
+
+/** Beat-phase error in master beats, wrapped to ±½; positive = the follower is behind. */
+internal fun syncPhaseError(masterBeat: Double, followerBeat: Double, fold: Double, offset: Double): Double {
+    val e = masterBeat - followerBeat * fold - offset
+    return e - Math.floor(e + 0.5)
+}
+
+/** Longest a phase error takes to close (seconds), and the most sync bends the speed to do it. */
+private const val SYNC_LOCK_SEC = 1.0
+private const val SYNC_MAX_BEND = 0.01
+/** A phase error this large (beats) is a jump, not drift: re-align the bars instead of bending. */
+private const val SYNC_REALIGN_BEATS = 0.12
+
+/**
+ * Speed factor that closes [err] master beats over about [SYNC_LOCK_SEC] at [masterBeatsPerSec],
+ * capped at ±1 % so the correction is never audible as a pitch bend.
+ */
+internal fun phaseCorrection(err: Double, masterBeatsPerSec: Double): Double {
+    if (masterBeatsPerSec <= 0.0) return 1.0
+    return 1.0 + (err / (masterBeatsPerSec * SYNC_LOCK_SEC)).coerceIn(-SYNC_MAX_BEND, SYNC_MAX_BEND)
+}
+
+/**
+ * One audio block of sync for follower [d] against master [l]. The speed is the master's speed times
+ * the ratio of the two grids' beat lengths where each deck is audible, so a dynamic grid's sections
+ * and the master's pitch fader are followed exactly instead of matched once. A small proportional
+ * bend ([Deck.phaseAdj]) then pulls the beats back onto each other, so rounding in either grid or a
+ * slightly wrong BPM cannot add up to drift over a long mix. Nudging either deck moves the held
+ * offset instead of being fought; a sudden large error (a jump on the master) re-aligns the bars.
+ * [delayFrames] is the output delay at 1× speed (the audible positions are compared, as in align).
+ */
+internal fun syncStep(d: Deck, l: Deck, delayFrames: Double) {
+    val dt = d.track ?: return; val lt = l.track ?: return
+    val lRatio = deckRatio(l)
+    val dPos = d.pos - delayFrames * d.effRatio
+    val lPos = l.pos - delayFrames * l.effRatio
+    val lSpb = lt.spbAt(lPos)
+    d.syncRatio = (lRatio * dt.spbAt(dPos) / (lSpb * d.syncFold)).coerceIn(0.5, 2.0)
+    if (!d.playing || !l.playing || d.scratching || l.scratching || d.needAlign) { d.phaseAdj = 1.0; return }
+    val err = syncPhaseError(lt.beatIndex(lPos), dt.beatIndex(dPos), d.syncFold, d.syncOffset)
+    if (d.bend != 0f || l.bend != 0f) {
+        // the DJ is nudging: hold whatever offset they leave, rather than pulling it back
+        d.syncOffset = syncPhaseError(d.syncOffset + err, 0.0, 1.0, 0.0)
+        d.phaseAdj = 1.0
+        return
+    }
+    if (abs(err) > SYNC_REALIGN_BEATS) { d.needAlign = true; d.phaseAdj = 1.0; return }
+    d.phaseAdj = phaseCorrection(err, lRatio * SR / lSpb)
 }
 
 /** Pitch ranges offered by the UI; reused by sync so it never allocates a fresh list. */
@@ -891,7 +935,6 @@ internal fun releaseSync(d: Deck) {
     ensurePitchRange(d, ratio)
     d.tempo = ((ratio - 1.0) / d.range).toFloat().coerceIn(-1f, 1f)
     d.syncOn = false
-    d.syncRefBpm = 0f
-    d.syncRefMaster = -1f
+    d.syncOffset = 0.0
     d.phaseAdj = 1.0
 }

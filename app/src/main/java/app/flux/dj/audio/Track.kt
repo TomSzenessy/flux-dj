@@ -157,6 +157,18 @@ class Track(
     /** Frames per beat at a position. */
     fun spbAt(p: Double): Double { val pos = mPos ?: return spb; return mSpb!![segByPos(p, pos)] }
     fun bpmAt(p: Double): Float = if (bpm <= 0) 0f else (60.0 * SR / spbAt(p)).toFloat()
+    /**
+     * Tempo for reading: the average over the 8 beats around [p]. A dynamic grid's per-beat markers
+     * wobble by a few hundredths of a BPM, which made the readout flicker; a real section change
+     * still shows within a few beats.
+     */
+    fun shownBpm(p: Double): Double {
+        if (bpm <= 0) return 0.0
+        if (mPos == null) return bpm.toDouble()
+        val b = beatIndex(p)
+        val span = beatPos(b + 4.0) - beatPos(b - 4.0)
+        return if (span > 0.0) 8.0 * 60.0 * SR / span else bpmAt(p).toDouble()
+    }
     val keyName: String get() = Keys.name(key)
     val camelot: String get() = Keys.camelot(key)
 }
