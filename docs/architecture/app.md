@@ -60,7 +60,9 @@ is the human navigation view, not a second command catalog.
   (rekordbox grids can swing several BPM beat to beat; sections and the master's
   fader are followed; the grid part glides over ~1 s), and a ±0.4 % bend outside an ~11 ms dead
   zone pulls the beats back together, so nothing drifts over a long mix and grid
-  noise never moves the pitch. Nothing changes while either deck is stopped. Nudging either deck moves the held offset; a jump
+  noise never moves the pitch. Nothing changes while either deck is stopped, and
+  the phase is left alone while either deck loops, rolls or scratches (a loop wrap
+  on the master must not seek the follower). Nudging either deck moves the held offset; a jump
   of more than ¼ beat re-aligns the bars without restarting the deck's speed. The
   BPM readout uses `Track.shownBpm` (8-beat average), and a synced deck shows the
   master's number, so per-beat grid noise never reaches the screen.

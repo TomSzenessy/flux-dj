@@ -906,7 +906,8 @@ internal fun phaseCorrection(err: Double, masterBeatsPerSec: Double): Double {
  * fader are followed instead of matched once. Nothing changes while either deck is stopped. A small proportional
  * bend ([Deck.phaseAdj]) then pulls the beats back onto each other, so rounding in either grid or a
  * slightly wrong BPM cannot add up to drift over a long mix. Nudging either deck moves the held
- * offset instead of being fought; a sudden large error (a jump on the master) re-aligns the bars.
+ * offset instead of being fought. While either deck loops or scratches the phase is left alone; a
+ * large error after that (or after a jump on the master) re-aligns the bars once.
  * [delayFrames] is the output delay at 1× speed (the audible positions are compared, as in align).
  */
 internal fun syncStep(d: Deck, l: Deck, delayFrames: Double, n: Int) {
@@ -920,7 +921,9 @@ internal fun syncStep(d: Deck, l: Deck, delayFrames: Double, n: Int) {
     val grid = dt.spbAround(dPos, SYNC_TEMPO_HALF) / lSpb
     d.syncGrid = if (d.syncGrid <= 0.0) grid else d.syncGrid + (grid - d.syncGrid) * (1.0 - exp(-n / (SR * SYNC_GLIDE_SEC)))
     d.syncRatio = (lRatio * d.syncGrid / d.syncFold).coerceIn(0.5, 2.0)
-    if (d.scratching || l.scratching || d.needAlign) { d.phaseAdj = 1.0; return }
+    // A loop, roll or scratch on either deck jumps its beat position on purpose: each wrap of a half-beat
+    // loop looked like a big phase error, so sync seeked the follower and it looped along with the master.
+    if (d.scratching || l.scratching || d.loopOn || l.loopOn || d.needAlign) { d.phaseAdj = 1.0; return }
     val err = syncPhaseError(lt.beatIndex(lPos), dt.beatIndex(dPos), d.syncFold, d.syncOffset)
     if (d.bend != 0f || l.bend != 0f) {
         // the DJ is nudging: hold whatever offset they leave, rather than pulling it back

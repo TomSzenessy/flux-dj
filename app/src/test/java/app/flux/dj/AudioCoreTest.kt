@@ -284,6 +284,27 @@ class SyncTest {
         assertTrue("beats stay together (worst $worst)", worst < 0.01)
     }
 
+    /**
+     * Seen on the tablet: a half-beat loop on the master made the synced deck loop too, because each
+     * loop wrap looked like a phase error past the re-align limit and sync seeked the follower back.
+     */
+    @Test fun aLoopOnTheMasterNeverMovesTheSyncedDeck() {
+        val master = Deck(0).apply { load(track("m", 128f)) }
+        val follower = Deck(1).apply { load(track("f", 128.06f)) }
+        engaged(follower, master)
+        playSynced(follower, master, 2.0)
+        val spb = master.track!!.spb
+        master.loopIn = master.pos + 0.3 * spb; master.loopOut = master.loopIn + 0.5 * spb; master.loopOn = true
+        var last = follower.pos
+        playSynced(follower, master, 6.0) {
+            if (master.pos >= master.loopOut) master.pos -= master.loopOut - master.loopIn
+            assertFalse("sync never re-aligns the follower because the master loops", follower.needAlign)
+            assertTrue("the follower keeps playing forward", follower.pos > last)
+            last = follower.pos
+        }
+        assertEquals("speed unchanged by the loop", 128.0 / 128.06, follower.syncRatio, 1e-4)
+    }
+
     @Test fun nudgingWhileSyncedHoldsTheNewOffset() {
         val master = Deck(1).apply { load(track("m", 128f)) }
         val follower = Deck(0).apply { load(track("f", 128f)) }
