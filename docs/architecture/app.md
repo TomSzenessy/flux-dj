@@ -78,6 +78,11 @@ is the human navigation view, not a second command catalog.
   `audio/` instead of branching inside the mixer loop.
 - Unit-testable logic stays out of Android framework classes; Android-specific
   decoding and audio output are adapted at the edge.
+- Local tracks are prepared once in the background, including tracks whose grid
+  came from `collection.xml`: the pass stores the waveform and the decoded PCM
+  (`cache/pcm`, 16-bit stereo at 44.1 kHz, LRU-capped by the cache setting), so
+  a selection maps audio from disk instead of decoding it again. Cloud tracks
+  stay lazy, because preparing them would download every original.
 - Untrusted XML goes through `Xml.parse` (no doctype/external entities) and
   token-bearing HTTP through `Http` (https or a private host, same-host
   redirects only); `collection.xml` and Plex responses are size-capped.

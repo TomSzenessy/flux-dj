@@ -667,10 +667,10 @@ internal fun Controller.startIndexing() {
     // Cloud tracks are analysed lazily when first loaded: indexing a whole Plex/Drive library
     // would download every original file. Local files still get the full background pass.
     val pool = imported.filter { it.sourceKind != "drive" } + deviceTracks
-    // Tracks covered by collection.xml are not analysed at all: their grid/key comes from the
-    // cloud file and their waveform is built on first load, so a big rekordbox import costs
-    // nothing in the background.
-    val todo = pool.filter { it.uri != null && it.energy >= 0 && (it.energy == 0 || !hasWave(it.id)) && !protectedMeta(metaParts(it.id)) }
+    // Every local file is decoded once in the background, including tracks whose grid/key came
+    // from collection.xml. That pass stores the waveform and the decoded PCM, so a later
+    // selection is a file map instead of a 2-3 s decode — "metadata and audio instantly".
+    val todo = pool.filter { it.uri != null && it.energy >= 0 && !hasWave(it.id) }
     val stale = pool.filter { it.uri != null && it.energy > 0 && hasWave(it.id) && !metaCurrent(metaParts(it.id)) }
     indexTotal = pool.size; indexDone = pool.size - todo.size
     indexSkipped = pool.count { protectedMeta(metaParts(it.id)) }
@@ -706,6 +706,7 @@ private fun Controller.indexOne(it: LibItem) {
     }
     cache.edit().remove("fail:${it.id}").apply()
     Analyzer.waveform(t); saveWave(t, t.gain)
+    savePcm(t)   // warm the decoded cache: the next selection maps the file instead of decoding
     val prot = metaParts(it.id)?.takeIf { p -> protectedMeta(p) }
     if (prot != null) {
         // rekordbox / hand-edited grid and key stay; only the profile is filled in
