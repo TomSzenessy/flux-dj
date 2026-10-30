@@ -198,17 +198,24 @@ class Engine(private val ctx: Context) {
         engageSync(d, o)
     }
 
-    /** Match [d] to [master] once, then follow the master's tempo for the rest of the mix. */
+    /** Match [d] to [master] once, then follow the master's pitch fader. */
     private fun engageSync(d: Deck, master: Deck) {
         if (nominalBpm(d) <= 0.0 || nominalBpm(master) <= 0.0) return
         if (master.syncOn) releaseSync(master)   // the deck we follow becomes the master
-        d.syncRatio = syncFollowTarget(d, master, current = 1.0)
+        d.syncRatio = syncTargetNow(d, master)
         ensurePitchRange(d, d.syncRatio)
         val masterSpeed = deckRatio(master).toFloat()
         d.syncRefMaster = masterSpeed
-        d.syncRefBpm = (currentBpm(master) * masterSpeed).toFloat()
+        d.syncRefBpm = (nominalBpm(master) * masterSpeed).toFloat()
         d.syncOn = true
         d.needAlign = true
+    }
+
+    /** Tempo at the playhead, using the loop-in tempo while a loop is active. */
+    private fun currentBpm(d: Deck): Double {
+        val t = d.track ?: return d.bpm.toDouble()
+        if (t.bpm <= 0) return 0.0
+        return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
     }
 
     fun startTransition(beats: Float) { transCancel = false; transReq = beats }
@@ -521,18 +528,18 @@ class Engine(private val ctx: Context) {
         if (decks[0].syncOn && decks[1].syncOn) releaseSync(decks[leader()])
         for (i in 0..1) {
             val d = decks[i]; val l = decks[1 - i]
-            if (d.syncOn && d.track != null && l.track != null) {
-                // Follow the master's *audible* tempo, not its dominant BPM: a rekordbox dynamic
-                // grid can move from 160 to 180 BPM mid-track, and a one-time match drifts away.
-                // The step is slew-limited and ignores tiny changes, so a steady master never
-                // re-pitches the deck and a tempo change glides instead of jumping.
-                val target = syncFollowTarget(d, l)
-                if (abs(target - d.syncRatio) > SYNC_DEADBAND) {
-                    d.syncRatio = slewTo(d.syncRatio, target)
-                    ensurePitchRange(d, d.syncRatio)
+            if (d.syncOn && nominalBpm(d) > 0.0 && nominalBpm(l) > 0.0) {
+                // Match once. After that, only follow the master's pitch fader; tempo markers,
+                // loops and jumps must never re-pitch the synced deck.
+                val masterSpeed = deckRatio(l).toFloat()
+                if (d.syncRefMaster < 0f) {
+                    d.syncRatio = syncTargetNow(d, l)
+                    d.syncRefMaster = masterSpeed
+                    d.syncRefBpm = (nominalBpm(l) * masterSpeed).toFloat()
+                } else if (abs(masterSpeed - d.syncRefMaster) > 0.0005f) {
+                    d.syncRatio = (d.syncRatio * (masterSpeed / d.syncRefMaster)).coerceIn(0.5, 2.0)
+                    d.syncRefMaster = masterSpeed
                 }
-                d.syncRefMaster = deckRatio(l).toFloat()
-                d.syncRefBpm = (currentBpm(l) * deckRatio(l)).toFloat()
                 if (d.needAlign && d.playing && l.playing) {
                     // Align the bars you actually hear/see: compare the audible (output-delayed)
                     // positions, then put the engine one delay ahead so the picture snaps immediately.
@@ -834,42 +841,6 @@ class Recorder(private val ctx: Context) {
  */
 internal fun nominalBpm(d: Deck): Double = d.track?.bpm?.toDouble() ?: 0.0
 
-/**
- * The tempo a deck is *playing* at right now: the grid segment under its playhead (loop-in while a
- * loop is active), before the pitch ratio. A rekordbox dynamic grid can change tempo mid-track, so
- * this is the only honest number to sync against and to display while a mix is running.
- */
-internal fun currentBpm(d: Deck): Double {
-    val t = d.track ?: return d.bpm.toDouble()
-    if (t.bpm <= 0) return 0.0
-    return t.bpmAt(if (d.loopOn) d.loopIn else d.pos).toDouble()
-}
-
-/** Largest relative ratio change per mixer block: a 13 % tempo change glides in ~0.15 s. */
-internal const val SYNC_MAX_STEP = 0.005
-
-/** Differences below this relative amount are ignored, so a steady master never nudges the deck. */
-internal const val SYNC_DEADBAND = 0.0002
-
-/**
- * Ratio that makes the follower's audible tempo equal the master's audible tempo right now.
- * Folded into the octave nearest [current] so a half-time break keeps the beat it had, and clamped
- * to the 0.5–2.0 range the decks support.
- */
-internal fun syncFollowTarget(f: Deck, l: Deck, current: Double = f.syncRatio): Double {
-    val follower = currentBpm(f)
-    val master = currentBpm(l) * deckRatio(l)
-    if (follower <= 0.0 || master <= 0.0 || current <= 0.0) return current
-    var t = (master / follower).coerceIn(0.5, 2.0)
-    while (t / current > 1.5) t /= 2
-    while (t / current < 0.67) t *= 2
-    return t.coerceIn(0.5, 2.0)
-}
-
-/** One slew step toward [target]; keeps a tempo change smooth instead of a jump. */
-internal fun slewTo(current: Double, target: Double, maxStep: Double = SYNC_MAX_STEP): Double =
-    current + (target - current).coerceIn(-maxStep, maxStep)
-
 /** Ratio that makes [followerBpm] play at [masterBpm] × [masterRatio], folded into 0.67–1.5. */
 internal fun syncMatchRatio(followerBpm: Double, masterBpm: Double, masterRatio: Double): Double {
     if (followerBpm <= 0.0 || masterBpm <= 0.0) return 1.0
@@ -885,6 +856,10 @@ internal fun syncMatchRatio(followerBpm: Double, masterBpm: Double, masterRatio:
  * was released and its tempo was frozen into the fader.
  */
 internal fun deckRatio(d: Deck): Double = if (d.syncOn) d.syncRatio else 1.0 + d.tempo * d.range
+
+/** One-time match: dominant master tempo ÷ dominant follower tempo. */
+internal fun syncTargetNow(f: Deck, l: Deck): Double =
+    syncMatchRatio(nominalBpm(f), nominalBpm(l), deckRatio(l))
 
 /** Pitch ranges offered by the UI; reused by sync so it never allocates a fresh list. */
 private val PITCH_RANGES = floatArrayOf(0.06f, 0.10f, 0.16f, 0.50f)

@@ -171,49 +171,26 @@ class SyncTest {
     }
 
     /**
-     * A master with a rekordbox dynamic grid moves from 160 to 180 BPM mid-track. The follower must
-     * keep following the tempo under the master's playhead; matching once drifted away while both
-     * decks still displayed 159.2.
+     * A rekordbox dynamic grid says ~138.9 BPM under the playhead while the deck displays 128.01.
+     * Sync must match what both decks show, and must not depend on where the playheads are — the old
+     * code used the grid segment, so every SYNC press re-pitched the deck.
      */
-    @Test fun syncFollowsADynamicMasterTempo() {
-        val masterTrack = track("m", 160f)
-        masterTrack.setTempoMap(doubleArrayOf(0.0, 10.0), doubleArrayOf(160.0, 180.0), 1)
-        val master = Deck(1).apply { load(masterTrack) }
-        val follower = Deck(0).apply { load(track("f", 160f)) }
+    @Test fun syncMatchesTheDisplayedTempoNotTheGridSegment() {
+        val masterTrack = track("m", 128.01f)
+        masterTrack.setTempoMap(doubleArrayOf(0.0, 1.296, 3.28), doubleArrayOf(138.89, 120.97, 138.89), 1)
+        masterTrack.bpm = 128.01f                       // what the deck shows (dominant tempo)
 
-        master.pos = 15.0 * SR
-        var ratio = syncFollowTarget(follower, master, current = 1.0)
-        repeat(200) { ratio = slewTo(ratio, syncFollowTarget(follower, master, ratio)) }
-        assertEquals("follower plays at the master's tempo", 1.125, ratio, 0.001)
-        assertEquals("audible tempo matches", currentBpm(master) * deckRatio(master), currentBpm(follower) * ratio, 0.01)
-    }
+        val follower = Deck(0).apply { load(track("f", 128f)) }
+        val master = Deck(1).apply { load(masterTrack); tempo = 0.6f; range = 0.08f; effRatio = 1.048 }
 
-    /** The ratio may depend on the follower's grid, but its *audible* tempo must not. */
-    @Test fun followerStaysAudibleAtTheMasterTempoWhereverItIs() {
-        val followerTrack = track("f", 128f)
-        followerTrack.setTempoMap(doubleArrayOf(0.0, 2.0, 6.0), doubleArrayOf(128.0, 138.89, 126.0), 1)
-        val follower = Deck(0).apply { load(followerTrack) }
-        val master = Deck(1).apply { load(track("m", 128f)) }
-        for (atSec in listOf(0.0, 3.0, 7.0)) {
-            follower.pos = atSec * SR
-            val r = syncFollowTarget(follower, master, current = 1.0)
-            assertEquals("audible tempo at ${atSec}s", 128.0, currentBpm(follower) * r, 0.01)
-        }
-    }
+        assertEquals("grid segment under the playhead", 138.89f, masterTrack.bpmAt(0.0), 1f)
+        val r = syncTargetNow(follower, master)
+        assertEquals("matches the displayed BPM", 1.0481, r, 0.0005)
 
-    /** A half-time master keeps the beat instead of halving the deck. */
-    @Test fun halfTimeMasterKeepsTheBeat() {
-        val master = Deck(1).apply { load(track("m", 80f)) }
-        val follower = Deck(0).apply { load(track("f", 160f)) }
-        assertEquals("folded into the current octave", 1.0, syncFollowTarget(follower, master, current = 1.0), 1e-9)
-    }
-
-    @Test fun slewStepsTowardsTheTargetWithoutJumping() {
-        assertEquals("one step at most", 0.505, slewTo(0.5, 1.2), 1e-9)
-        var r = 0.5
-        repeat(200) { r = slewTo(r, 1.0) }
-        assertEquals("converges", 1.0, r, 1e-9)
-        assertEquals("does not overshoot", 1.0, slewTo(1.0, 1.0), 1e-12)
+        // moving either playhead must not change the match
+        follower.pos = 20.0 * SR
+        master.pos = 40.0 * SR
+        assertEquals("same match anywhere in the track", r, syncTargetNow(follower, master), 1e-9)
     }
 
     @Test fun syncOffKeepsTheMatchedSpeed() {

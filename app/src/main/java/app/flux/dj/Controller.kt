@@ -192,10 +192,10 @@ class Controller(app: Application) : AndroidViewModel(app) {
                 u.hasBpm = t.bpm > 0
                 // tempo at the playhead (follows tempo maps); "ORIG" = the track's own tempo there
                 val here = t.bpmAt(vpos(i))
-                // Show the tempo that is actually audible at the playhead, dynamic grids included:
-                // a synced deck and its master then display the same number because they play at
-                // the same tempo. Showing the dominant BPM hid a master that moved 160 → 180.
-                val shownBpm = here
+                // A dynamic/rekordbox grid can change BPM slightly every beat. Show the track's
+                // stable (dominant) tempo for the big number so the master deck does not appear to
+                // drift while the other deck is synced; the grid still follows the map internally.
+                val shownBpm = if (t.variable) t.bpm else here
                 if (ratio != lastRatio[i] || shownBpm != lastShownBpm[i] || u.analysing) {
                     lastRatio[i] = ratio; lastShownBpm[i] = shownBpm
                     u.bpm = if (t.bpm > 0) String.format("%.1f", shownBpm * ratio) else if (u.analysing) "···" else "–"

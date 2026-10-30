@@ -54,11 +54,7 @@ is the human navigation view, not a second command catalog.
   re-enters the stored loop window rather than re-anchoring at the playhead.
 - **Deck ↔ track:** beat maths lives on `Track` (`beatIndex`, `beatPos`,
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
-  to the deck, the UI and sync. Sync follows the master's tempo *under its
-  playhead*, not its dominant BPM, and steers the follower with a slew limit and
-  a deadband; the BPM readout shows the tempo that is audible at the playhead, so
-  a synced deck and its master display the same number and stay together when a
-  dynamic grid moves (e.g. a 160 → 180 BPM remix section).
+  to the deck, the UI and sync.
 - **Library ↔ sources:** `Controller` normalises MediaStore, imported folders,
   Plex and Drive into one `Track`/library model; source-specific code stays in
   `Cloud`, `Rekordbox` or the SAF helpers.
