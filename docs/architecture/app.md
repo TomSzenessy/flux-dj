@@ -81,6 +81,10 @@ is the human navigation view, not a second command catalog.
 - Untrusted XML goes through `Xml.parse` (no doctype/external entities) and
   token-bearing HTTP through `Http` (https or a private host, same-host
   redirects only); `collection.xml` and Plex responses are size-capped.
+  Android's `DocumentBuilderFactory` ignores most JAXP flags and throws from the
+  unimplemented setters, so `Xml` treats every hardening option as best-effort
+  and additionally refuses a doctype found in the 64 KiB prolog; a unit test
+  models that factory so a strict chain cannot return.
 - Credentials and library indexes are excluded from Android backup; release
   identity and signing are supplied by the release environment, never a
   per-run debug key.
