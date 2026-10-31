@@ -52,6 +52,9 @@ is the human navigation view, not a second command catalog.
 - **Deck playback:** Hermite resampling for normal speed, a WSOLA grain engine
   for key lock/pitch shift (new grains align with the running one), and reloop
   re-enters the stored loop window rather than re-anchoring at the playhead.
+- **Screen refresh:** `poll()` runs every frame while anything plays; when idle,
+  `needsPolling()` also wakes it whenever a deck's `uiSignature()` changed, so a
+  pause, jump, loop or cue on a stopped deck still reaches the screen.
 - **Deck ↔ track:** beat maths lives on `Track` (`beatIndex`, `beatPos`,
   `spbAt`, `bpmAt`), so a single tempo and a rekordbox tempo map behave the same
   to the deck, the UI and sync. SYNC matches where the master is at that moment

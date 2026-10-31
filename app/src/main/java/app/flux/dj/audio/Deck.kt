@@ -279,6 +279,21 @@ class Deck(val index: Int) {
         if (slipOn) slipActive = false
     }
 
+    /**
+     * Changes whenever anything the deck shows changes (play state, playhead, loop, cues, modes).
+     * The screen stops redrawing while both decks are paused, and compares this to know that a pause,
+     * jump or loop still needs a frame — otherwise the picture froze and the button kept saying "playing".
+     */
+    fun uiSignature(): Long {
+        var h = System.identityHashCode(track).toLong()
+        fun mix(v: Long) { h = h * 31 + v }
+        mix(if (playing) 1 else 0); mix(if (previewing) 1 else 0); mix(pos.toLong())
+        mix(if (loopOn) 1 else 0); mix(loopIn.toLong()); mix(loopOut.toLong()); mix(loopBeats.toBits().toLong())
+        mix(hotCueRev.toLong()); mix(cue.toLong()); mix(if (syncOn) 1 else 0); mix(if (keyLock) 1 else 0)
+        mix(if (slipOn) 1 else 0); mix(keyShift.toLong()); mix(tempo.toBits().toLong()); mix(range.toBits().toLong())
+        return h
+    }
+
     fun setTempoFader(v: Float) { tempo = v.coerceIn(-1f, 1f); syncOn = false }
     fun ratioBase(): Double = if (syncOn && bpm > 0) syncRatio else (1.0 + tempo * range)
 

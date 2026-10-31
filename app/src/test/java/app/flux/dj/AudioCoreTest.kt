@@ -103,6 +103,32 @@ class FractionalBpmTest {
 }
 
 class TransportTest {
+    /**
+     * Seen on the tablet: with both decks paused the screen stops redrawing, so a pause left the
+     * button on "playing" and jumps or loops on a paused deck never showed. Each of those must change
+     * the signature the screen checks before it goes idle.
+     */
+    @Test fun everyPausedDeckActionReachesTheScreen() {
+        val t = DemoTracks.build(DemoTracks.specs[0])
+        val d = Deck(0); d.load(t)
+        val l = FloatArray(BLOCK); val r = FloatArray(BLOCK)
+        d.render(BLOCK, l, r); d.play(); repeat(200) { d.render(BLOCK, l, r) }
+        fun changes(what: String, act: () -> Unit) {
+            val before = d.uiSignature()
+            act(); repeat(4) { d.render(BLOCK, l, r) }
+            assertNotEquals("$what must reach the screen", before, d.uiSignature())
+        }
+        changes("pause") { d.pauseAt(d.pos) }
+        repeat(400) { d.render(BLOCK, l, r) }
+        val idle = d.uiSignature()
+        repeat(20) { d.render(BLOCK, l, r) }
+        assertEquals("a paused deck settles, so the screen can go idle", idle, d.uiSignature())
+        changes("a jump while paused") { d.seekNow(d.beatsFrom(d.pos, 8.0)) }
+        changes("a loop while paused") { d.loopSet(4f) }
+        changes("loop off while paused") { d.loopOff() }
+        changes("a hot cue set while paused") { d.hotCueDown(0) }
+    }
+
     @Test fun cueInsideLoopRestartsLoop() {
         val t = DemoTracks.build(DemoTracks.specs[0])
         val d = Deck(0); d.load(t)

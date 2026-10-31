@@ -44,7 +44,8 @@ fun FluxApp(c: Controller, onAddFiles: () -> Unit, onAddFolder: () -> Unit, onPi
     LaunchedEffect(c) {
         var last = 0L
         while (true) {
-            if (!c.needsPolling()) { delay(200); continue }
+            // idle checks are cheap (no frame, no recomposition); 30 ms keeps a paused deck's pads snappy
+            if (!c.needsPolling()) { delay(30); continue }
             androidx.compose.runtime.withFrameNanos { t ->
                 if (t - last > 13_000_000L) { last = t; c.poll() }
             }

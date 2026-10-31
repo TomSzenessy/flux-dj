@@ -162,9 +162,14 @@ class Controller(app: Application) : AndroidViewModel(app) {
     private var lastMasterText = ""
     internal var nextJob: Job? = null
 
+    /** Deck state when the screen last caught up; see [Deck.uiSignature]. */
+    private val polledSig = LongArray(2)
+
     /** True while something visible is moving; an idle screen must not burn a frame every 13 ms. */
     fun needsPolling(): Boolean {
         if (engine.decks.any { it.playing || it.previewing || it.scratching || it.searching }) return true
+        // a pause, jump or loop on a stopped deck still has to reach the screen
+        if (engine.decks.indices.any { engine.decks[it].uiSignature() != polledSig[it] }) return true
         if (engine.previewPlaying || engine.transitionActive) return true
         if (engine.recorder.active || engine.recorder.saving) return true
         if (aligning || pendingLoad != null || engine.calib) return true
@@ -173,6 +178,7 @@ class Controller(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ per-frame
     fun poll() {
+        for (i in 0..1) polledSig[i] = engine.decks[i].uiSignature()
         tick.longValue = tick.longValue + 1
         trackOnAir()
         for (i in 0..1) {
